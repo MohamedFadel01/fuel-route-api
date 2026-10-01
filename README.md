@@ -18,5 +18,7 @@ Common commands:
 ```bash
 pytest                          # run the tests
 ruff check . && ruff format .   # lint and format
+python manage.py migrate        # create the database tables
+python manage.py import_stations  # load data/fuel-prices-for-be-assessment.csv (safe to re-run)
 python manage.py runserver      # start the dev server
 ```

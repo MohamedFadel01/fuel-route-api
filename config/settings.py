@@ -64,6 +64,9 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
+# --- Fuel data --------------------------------------------------------------
+FUEL_PRICES_CSV = BASE_DIR / "data" / "fuel-prices-for-be-assessment.csv"
+
 # --- Django REST framework --------------------------------------------------
 # A public, stateless JSON API: no sessions, no auth, no browsable HTML.
 REST_FRAMEWORK = {

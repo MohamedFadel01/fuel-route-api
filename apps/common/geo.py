@@ -68,6 +68,10 @@ def miles_to_chord(miles: float) -> float:
 
     Use it to turn a search radius in miles into the radius a KD-tree understands. A
     distance beyond half the Earth's circumference reaches every point, so it gives 2.
+
+    A point exactly ``miles`` away can land on either side of the resulting limit, because
+    floating-point numbers are rounded (by about 1e-16). Anything that must include the
+    border should add a tiny margin, far below any real-world distance.
     """
     if math.isnan(miles) or miles < 0:
         raise ValueError(f"Distance must be zero or more miles, got {miles}")
@@ -81,6 +85,7 @@ def chord_to_miles(chord: float) -> float:
 
     The inverse of ``miles_to_chord``.
     """
-    if math.isnan(chord) or not 0 <= chord <= _MAX_CHORD + _CHORD_TOLERANCE:
+    # Written so that NaN fails too (every comparison with NaN is false).
+    if not 0 <= chord <= _MAX_CHORD + _CHORD_TOLERANCE:
         raise ValueError(f"A chord on a unit sphere is between 0 and 2, got {chord}")
     return 2 * EARTH_RADIUS_MILES * math.asin(min(1.0, chord / _MAX_CHORD))

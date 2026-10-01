@@ -1,5 +1,6 @@
 import dataclasses
 import math
+import random
 
 import pytest
 
@@ -128,10 +129,6 @@ SAMPLE_POINTS = [
 ]
 
 
-def distance_between(a, b):
-    return math.dist(a, b)
-
-
 class TestUnitVector:
     @pytest.mark.parametrize(
         ("point", "expected"),
@@ -238,7 +235,7 @@ class TestStraightLineMatchesGroundDistance:
     @pytest.mark.parametrize("a", SAMPLE_POINTS)
     @pytest.mark.parametrize("b", SAMPLE_POINTS)
     def test_every_pair(self, a, b):
-        chord = distance_between(unit_vector(a), unit_vector(b))
+        chord = math.dist(unit_vector(a), unit_vector(b))
 
         assert chord == pytest.approx(miles_to_chord(haversine_miles(a, b)), abs=1e-9)
         assert chord_to_miles(min(chord, 2.0)) == pytest.approx(haversine_miles(a, b), abs=1e-3)
@@ -249,5 +246,34 @@ class TestStraightLineMatchesGroundDistance:
         eleven_miles_north = Coordinates(40.0 + 11 / 69.09, -100.0)
         radius = miles_to_chord(10.0)
 
-        assert distance_between(unit_vector(origin), unit_vector(nine_miles_north)) < radius
-        assert distance_between(unit_vector(origin), unit_vector(eleven_miles_north)) > radius
+        assert math.dist(unit_vector(origin), unit_vector(nine_miles_north)) < radius
+        assert math.dist(unit_vector(origin), unit_vector(eleven_miles_north)) > radius
+
+    def test_random_pairs_agree_with_an_independent_calculation(self):
+        generator = random.Random(42)
+
+        def random_point():
+            # Uniform over the sphere: the sine of the latitude is uniform.
+            return Coordinates(
+                math.degrees(math.asin(generator.uniform(-1, 1))), generator.uniform(-180, 180)
+            )
+
+        for _ in range(2000):
+            a, b = random_point(), random_point()
+            u, v = unit_vector(a), unit_vector(b)
+            ground = haversine_miles(a, b)
+
+            assert math.dist(u, v) == pytest.approx(miles_to_chord(ground), abs=1e-12)
+            # The angle between the two vectors, another way to get the same distance.
+            dot = max(-1.0, min(1.0, sum(x * y for x, y in zip(u, v, strict=True))))
+            assert math.acos(dot) * EARTH_RADIUS_MILES == pytest.approx(ground, abs=1e-6)
+
+    @pytest.mark.parametrize(("miles", "inside"), [(9.999, True), (10.001, False)])
+    def test_a_search_radius_has_a_sharp_edge(self, miles, inside):
+        origin = Coordinates(40.0, -100.0)
+        # Walk due north: one degree of latitude is exactly pi/180 of the Earth's radius.
+        north = Coordinates(40.0 + math.degrees(miles / EARTH_RADIUS_MILES), -100.0)
+
+        within = math.dist(unit_vector(origin), unit_vector(north)) <= miles_to_chord(10.0)
+
+        assert within is inside

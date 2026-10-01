@@ -41,6 +41,14 @@ def test_the_image_uses_the_same_python_as_ci_and_skips_local_files():
 
 def test_compose_publishes_the_server_on_port_8000():
     compose = (ROOT / "docker-compose.yml").read_text()
+    script = (ROOT / "scripts" / "serve.sh").read_text()
 
     assert "8000:8000" in compose
     assert "DJANGO_DEBUG" in compose
+    # A missing .env must still start. When the file exists, the container should see it.
+    assert "env_file" in compose
+    assert "required: false" in compose
+    # One worker serves both trips and this check. The check has to wait out a slow trip,
+    # or a healthy server looks dead.
+    assert "--timeout 30" in script
+    assert "timeout: 30s" in compose

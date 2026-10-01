@@ -12,7 +12,7 @@ Docker is the whole setup. The first start creates the database, loads the price
 docker compose up --build
 ```
 
-Then open [http://localhost:8000/map/](http://localhost:8000/map/). Click once for the start, again for the finish. A third click starts over, and so does the button.
+Then open [http://localhost:8000/map/](http://localhost:8000/map/). Click once for the start, again for the finish. A third click begins a new trip. Start over clears the map.
 
 The page itself comes from the API. The browser then loads the map library and the map tiles, so it needs a network connection. Planning one trip calls the public routing server once. Asking for the same two places again, within an hour, does not.
 

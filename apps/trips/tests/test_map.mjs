@@ -156,6 +156,13 @@ test("a rejected place names the field", () => {
   assert.match(message, /finish: A valid number is required/);
 });
 
+test("a bad latitude is named, not dumped as an object", () => {
+  const message = describeError({ start: { lat: ["A valid number is required."] } });
+
+  assert.match(message, /start: lat: A valid number is required/);
+  assert.doesNotMatch(message, /object Object/i);
+});
+
 test("an empty or missing error still says the trip was not planned", () => {
   assert.match(describeError(null), /could not be planned/i);
   assert.match(describeError({}), /could not be planned/i);

@@ -66,16 +66,27 @@ export function describePlan(plan) {
   };
 }
 
+function errorText(value) {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) return value.map(errorText).filter(Boolean).join(" ");
+  if (value && typeof value === "object") {
+    return Object.entries(value)
+      .map(([key, item]) => {
+        const text = errorText(item);
+        if (!text) return "";
+        return key === "non_field_errors" ? text : `${key}: ${text}`;
+      })
+      .filter(Boolean)
+      .join(" ");
+  }
+  return "";
+}
+
 export function describeError(body) {
   if (body && typeof body.detail === "string" && body.detail) return body.detail;
   if (body && typeof body === "object") {
-    const lines = [];
-    for (const [key, value] of Object.entries(body)) {
-      const text = Array.isArray(value) ? value.join(" ") : String(value);
-      if (!text) continue;
-      lines.push(key === "non_field_errors" ? text : `${key}: ${text}`);
-    }
-    if (lines.length) return lines.join(" ");
+    const text = errorText(body);
+    if (text) return text;
   }
   return "The trip could not be planned.";
 }

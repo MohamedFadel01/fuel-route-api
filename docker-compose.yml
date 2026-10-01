@@ -3,9 +3,15 @@ services:
     build: .
     ports:
       - "8000:8000"
+    # These two win over .env, so the demo stays off debug and on localhost.
     environment:
       DJANGO_DEBUG: "false"
       DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1
+    env_file:
+      - path: .env
+        required: false
+    # One worker serves trips and this check. Wait as long as a request may run,
+    # or a slow trip looks like a dead server.
     healthcheck:
       test:
         [
@@ -14,7 +20,7 @@ services:
           "-c",
           "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/map/')",
         ]
-      interval: 10s
-      timeout: 5s
-      retries: 6
+      interval: 30s
+      timeout: 30s
+      retries: 3
       start_period: 60s

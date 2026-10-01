@@ -8,13 +8,9 @@ import pytest
 
 from apps.common.geo import EARTH_RADIUS_MILES, Coordinates, haversine_miles, unit_vector
 from apps.trips.domain.route_path import DEFAULT_SPACING_MILES, RoutePath
+from apps.trips.tests.geo_helpers import destination, north_of
 
 START = Coordinates(40.0, -100.0)
-
-
-def north_of(point, miles):
-    """The point ``miles`` due north of ``point`` (a meridian is a great circle)."""
-    return Coordinates(point.latitude + math.degrees(miles / EARTH_RADIUS_MILES), point.longitude)
 
 
 def straight_north(total_miles, vertices=2):
@@ -416,19 +412,6 @@ class TestRandomRoutes:
 
     @staticmethod
     def random_route(generator):
-        def move(point, heading, miles):
-            distance = miles / EARTH_RADIUS_MILES
-            lat, lon = math.radians(point.latitude), math.radians(point.longitude)
-            new_lat = math.asin(
-                math.sin(lat) * math.cos(distance)
-                + math.cos(lat) * math.sin(distance) * math.cos(heading)
-            )
-            new_lon = lon + math.atan2(
-                math.sin(heading) * math.sin(distance) * math.cos(lat),
-                math.cos(distance) - math.sin(lat) * math.sin(new_lat),
-            )
-            return Coordinates(math.degrees(new_lat), (math.degrees(new_lon) + 540) % 360 - 180)
-
         start = Coordinates(
             generator.choice([generator.uniform(25, 49), generator.uniform(-60, 80), 0.0, 88.0]),
             generator.choice([generator.uniform(-125, -67), 179.9, -179.9, 0.0]),
@@ -442,7 +425,9 @@ class TestRandomRoutes:
             if roll < 0.08:
                 heading += math.pi  # turning back
             heading += generator.gauss(0, 0.4)
-            route.append(move(route[-1], heading, 10 ** generator.uniform(-3, 1.9)))
+            route.append(
+                destination(route[-1], math.degrees(heading), 10 ** generator.uniform(-3, 1.9))
+            )
         return route
 
     def test_invariants_and_positions(self):

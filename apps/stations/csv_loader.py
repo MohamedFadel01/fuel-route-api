@@ -26,6 +26,11 @@ PRICE = "Retail Price"
 
 REQUIRED_COLUMNS = (OPIS_ID, NAME, ADDRESS, CITY, STATE, RACK_ID, PRICE)
 
+# Limits of the database columns (see ``Station``). A row beyond them is skipped and
+# reported, instead of crashing the whole import when it is stored.
+MAX_ID = 2**31 - 1
+MAX_PRICE = Decimal(100)  # exclusive: the price column holds 2 whole digits
+
 
 class InvalidRowError(ValueError):
     """A CSV row cannot be turned into a station."""
@@ -82,7 +87,10 @@ def _non_negative_int(row: Mapping[str, str | None], column: str) -> int:
     text = _text(row, column)
     if not (text.isascii() and text.isdigit()):
         raise InvalidRowError(f"{column}: {text!r} is not a non-negative integer")
-    return int(text)
+    value = int(text)
+    if value > MAX_ID:
+        raise InvalidRowError(f"{column}: {text!r} is larger than {MAX_ID}")
+    return value
 
 
 def _state(row: Mapping[str, str | None]) -> str:
@@ -100,6 +108,8 @@ def _price(row: Mapping[str, str | None]) -> Decimal:
         raise InvalidRowError(f"{PRICE}: {text!r} is not a number") from None
     if not price.is_finite() or price <= 0:
         raise InvalidRowError(f"{PRICE}: {text!r} is not a positive number")
+    if price >= MAX_PRICE:
+        raise InvalidRowError(f"{PRICE}: {text!r} is not below {MAX_PRICE}")
     return price
 
 

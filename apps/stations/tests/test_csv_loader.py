@@ -3,6 +3,8 @@ from decimal import Decimal
 import pytest
 
 from apps.stations.csv_loader import (
+    MAX_ID,
+    MAX_PRICE,
     InvalidRowError,
     MissingColumnsError,
     SkippedRow,
@@ -11,6 +13,7 @@ from apps.stations.csv_loader import (
     load_stations,
     parse_row,
 )
+from apps.stations.models import Station
 
 HEADER = "OPIS Truckstop ID,Truckstop Name,Address,City,State,Rack ID,Retail Price"
 
@@ -122,6 +125,43 @@ class TestParseRow:
     def test_rejects_states_that_are_not_two_letters(self, state):
         with pytest.raises(InvalidRowError, match="State"):
             parse_row(make_row(State=state))
+
+
+class TestValuesTheDatabaseCanStore:
+    @pytest.mark.parametrize("column", ["OPIS Truckstop ID", "Rack ID"])
+    def test_ids_up_to_the_32_bit_limit_are_accepted(self, column):
+        record = parse_row(make_row(**{column: str(MAX_ID)}))
+
+        assert MAX_ID in (record.opis_id, record.rack_id)
+
+    @pytest.mark.parametrize("column", ["OPIS Truckstop ID", "Rack ID"])
+    def test_ids_beyond_the_32_bit_limit_are_rejected(self, column):
+        with pytest.raises(InvalidRowError, match=column):
+            parse_row(make_row(**{column: str(MAX_ID + 1)}))
+
+    def test_the_highest_storable_price_is_accepted(self):
+        price = MAX_PRICE - Decimal("0.00000001")
+
+        assert parse_row(make_row(**{"Retail Price": str(price)})).price == price
+
+    @pytest.mark.parametrize("price", ["100", "100.00", "150", "1e3"])
+    def test_prices_the_database_cannot_hold_are_rejected(self, price):
+        with pytest.raises(InvalidRowError, match="Retail Price"):
+            parse_row(make_row(**{"Retail Price": price}))
+
+    def test_an_oversized_row_is_skipped_without_losing_the_others(self):
+        lines = [HEADER, "1,GOOD,A,Austin,TX,1,3.00", "2,HUGE,A,Austin,TX,1,150"]
+
+        result = load_stations(lines)
+
+        assert [r.opis_id for r in result.stations] == [1]
+        assert len(result.skipped) == 1
+
+    def test_the_limits_match_the_station_model(self):
+        price = Station._meta.get_field("price")
+
+        assert Decimal(10) ** (price.max_digits - price.decimal_places) == MAX_PRICE
+        assert MAX_ID == 2**31 - 1  # the largest PositiveIntegerField on every database
 
 
 class TestDedupeLowestPrice:

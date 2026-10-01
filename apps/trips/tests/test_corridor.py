@@ -15,7 +15,13 @@ from apps.trips.domain.corridor import (
     StationSite,
 )
 from apps.trips.domain.route_path import RoutePath
-from apps.trips.tests.geo_helpers import along_track_miles, destination, north_of
+from apps.trips.tests.geo_helpers import (
+    along_track_miles,
+    cross_track_miles,
+    destination,
+    north_of,
+    random_route,
+)
 
 START = Coordinates(40.0, -100.0)
 PRICE = Decimal("3.499")
@@ -204,15 +210,27 @@ class TestBendsAndSpecialRoutes:
 
     def test_a_station_inside_a_bend_belongs_to_the_nearer_leg(self):
         corner = north_of(START, 50.0)
-        end = destination(corner, 90.0, 50.0)
-        road = RoutePath.from_coordinates([START, corner, end])
-        # Inside the corner: 4 miles from the first leg, 8 miles from the second.
-        inside = destination(destination(north_of(START, 35.0), 90.0, 4.0), 0.0, 0.0)
+        road = RoutePath.from_coordinates([START, corner, destination(corner, 90.0, 50.0)])
+        # Both are inside the corner, each within 10 miles of both legs.
+        nearer_the_first = destination(
+            north_of(START, 44.0), 90.0, 3.0
+        )  # 3 mi from leg 1, 6 from leg 2
+        nearer_the_second = destination(
+            north_of(START, 47.0), 90.0, 6.0
+        )  # 6 mi from leg 1, 3 from leg 2
 
-        found = Corridor(road, [StationSite(1, inside, PRICE)]).within(10.0)
+        found = Corridor(
+            road,
+            [StationSite(1, nearer_the_first, PRICE), StationSite(2, nearer_the_second, PRICE)],
+        ).within(10.0)
 
-        assert found[0].mile_marker == pytest.approx(35.0, abs=0.3)
-        assert found[0].miles_from_route == pytest.approx(4.0, abs=0.05)
+        first, second = found
+        assert first.station_id == 1
+        assert first.mile_marker == pytest.approx(44.0, abs=0.3)
+        assert first.miles_from_route == pytest.approx(3.0, abs=0.3)
+        assert second.station_id == 2
+        assert second.mile_marker == pytest.approx(50.0 + 6.0, abs=0.3)  # past the corner
+        assert second.miles_from_route == pytest.approx(3.0, abs=0.3)
 
     def test_a_road_that_doubles_back_gives_a_station_one_of_its_two_passes(self):
         out_and_back = RoutePath.from_coordinates([START, north_of(START, 20.0), START])
@@ -354,3 +372,94 @@ class TestAgainstBruteForce:
             nearest = min(haversine_miles(station.coordinates, point) for point in road.points)
             assert found.miles_from_route == pytest.approx(nearest, abs=1e-6)
             assert nearest <= 25.0 + 1e-6
+
+
+class TestAccuracyAgainstTheTextbook:
+    """Measured against the real route line, not just against the route's sample points."""
+
+    def test_distances_and_markers_are_within_half_a_gap_of_the_truth(self):
+        new_york, los_angeles = Coordinates(40.7128, -74.0060), Coordinates(34.0522, -118.2437)
+        road = RoutePath.from_coordinates([new_york, los_angeles])
+        half_gap = road.spacing_miles / 2
+        generator = random.Random(8)
+        stations = [
+            StationSite(
+                i,
+                destination(
+                    road.points[generator.randrange(len(road))],
+                    generator.uniform(0, 360),
+                    generator.uniform(0, 60),
+                ),
+                PRICE,
+            )
+            for i in range(600)
+        ]
+
+        checked = 0
+        for found in Corridor(road, stations).within(60.0):
+            point = stations[found.station_id].coordinates
+            along = along_track_miles(new_york, los_angeles, point)
+            if not 0 <= along <= road.total_miles:
+                continue  # the nearest spot is an end of the route, not the line itself
+            checked += 1
+            overstated = found.miles_from_route - cross_track_miles(new_york, los_angeles, point)
+            assert -1e-6 <= overstated <= half_gap + 1e-6
+            assert abs(found.mile_marker - along) <= half_gap + 1e-6
+        assert checked > 300  # the check is meaningful
+
+    def test_at_the_edge_of_the_margin_the_error_is_a_few_feet(self, road):
+        # sqrt(10**2 + 0.25**2) - 10 = 0.0031 miles = 16 feet at most.
+        base = road.points[len(road) // 2]
+        halfway = destination(base, 0.0, road.spacing_miles / 2)  # between two route points
+        station = StationSite(1, destination(halfway, 90.0, 10.0), PRICE)
+
+        found = Corridor(road, [station]).within(10.1)[0]
+
+        assert 10.0 <= found.miles_from_route <= 10.0 + 17 / 5280
+
+
+class TestMessyRoutesAgainstBruteForce:
+    def test_repeats_u_turns_the_date_line_and_the_poles(self):
+        generator = random.Random(99)
+        compared = 0
+        for _ in range(40):
+            route = random_route(generator)
+            road = RoutePath.from_coordinates(
+                route, spacing_miles=10 ** generator.uniform(-0.7, 0.4)
+            )
+            stations = [
+                StationSite(
+                    i,
+                    destination(
+                        route[generator.randrange(len(route))],
+                        generator.uniform(0, 360),
+                        10 ** generator.uniform(-1, 2.2),
+                    ),
+                    PRICE,
+                )
+                for i in range(120)
+            ]
+            corridor = Corridor(road, stations)
+            latitudes = np.radians([p.latitude for p in road.points])
+            longitudes = np.radians([p.longitude for p in road.points])
+
+            for margin in (generator.uniform(0.5, 60), 10.0, 25.0, 50.0):
+                found = {s.station_id: s for s in corridor.within(margin)}
+                for station in stations:
+                    lat, lon = (math.radians(v) for v in dataclasses.astuple(station.coordinates))
+                    h = (
+                        np.sin((latitudes - lat) / 2) ** 2
+                        + np.cos(lat) * np.cos(latitudes) * np.sin((longitudes - lon) / 2) ** 2
+                    )
+                    miles = 2 * EARTH_RADIUS_MILES * np.arcsin(np.sqrt(np.minimum(1.0, h)))
+                    nearest = int(np.argmin(miles))
+                    if abs(miles[nearest] - margin) < 1e-5:
+                        continue  # exactly on the edge: either answer is fine
+                    compared += 1
+                    assert (miles[nearest] <= margin) == (station.station_id in found)
+                    if station.station_id in found:
+                        assert found[station.station_id].mile_marker == road.mile_markers[nearest]
+                        assert found[station.station_id].miles_from_route == pytest.approx(
+                            miles[nearest], abs=1e-6
+                        )
+        assert compared == 40 * 4 * 120

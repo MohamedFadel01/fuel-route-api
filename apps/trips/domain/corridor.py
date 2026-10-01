@@ -10,9 +10,13 @@ the fuel planner can treat the trip as a line from mile 0 to ``total_miles`` wit
 stations along it. The detour needed to reach a station is ignored; ``miles_from_route`` is
 reported so callers can see how far off the road a station is.
 
-Distances are measured to the nearest point of the ``RoutePath``, which are at most 0.5
-miles apart. That makes a mile marker accurate to about a quarter of a mile, and a distance
-at the edge of a 10-mile margin accurate to about 16 feet: far finer than the positions.
+Distances are measured to the nearest point of the ``RoutePath``. Those points are at most
+``path.spacing_miles`` apart (0.5 miles by default), so with the default spacing:
+
+* a mile marker is within a quarter of a mile of the true position along the road;
+* a distance is never understated, and overstated by at most a quarter of a mile for a
+  station right beside the road, and by about 16 feet for one at the edge of a 10-mile
+  margin. That is far finer than the station positions themselves.
 
 Everything here is plain Python and numpy, with no database and no network.
 """
@@ -50,7 +54,11 @@ class StationSite:
 
 @dataclass(frozen=True, slots=True)
 class StationOnRoute:
-    """A station within the margin: where along the route it is, and how far off the road."""
+    """A station within the margin: where along the route it is, and how far off the road.
+
+    ``miles_from_route`` is measured to the nearest route point, so it can be a little larger
+    than the true distance to the road (by at most half the route's point spacing).
+    """
 
     station_id: int
     mile_marker: float

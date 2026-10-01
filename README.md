@@ -43,3 +43,26 @@ saved after every station: stop it with Ctrl+C and run it again to continue. Set
 `NOMINATIM_USER_AGENT` (see `.env.example`) to identify yourself, as the Nominatim usage
 policy requires. The GeoNames files (`data/geonames/US.zip`, `CA.zip`) are downloaded on the
 first run.
+
+### Saving and restoring the result
+
+Because the full run is slow, its result is committed as `data/stations_geocoded.csv`
+(`opis_id, latitude, longitude, location_precision`). Anyone can restore it in a moment:
+
+```bash
+python manage.py import_stations           # prices and names, from the OPIS CSV
+python manage.py load_station_locations    # locations, from data/stations_geocoded.csv
+```
+
+To regenerate the file after a geocoding run: `python manage.py export_station_locations`.
+
+### Try it on a small sample first
+
+```bash
+scripts/demo_geocoding.sh          # 15 stations, about 30 seconds
+scripts/demo_geocoding.sh 40       # a bigger sample
+scripts/demo_geocoding.sh 15 --city-only   # offline, skips OpenStreetMap
+```
+
+The demo imports, locates, exports, restores into a second empty database and checks that
+the restored data is identical. It uses throwaway databases, so nothing of yours is changed.

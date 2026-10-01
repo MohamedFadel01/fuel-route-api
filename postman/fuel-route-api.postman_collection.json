@@ -1,0 +1,87 @@
+{
+  "info": {
+    "name": "Fuel route API",
+    "description": "Plan fuel stops for a drive. Start the server with `docker compose up --build`, then send these. Money and gallons come back as strings.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8000"
+    }
+  ],
+  "item": [
+    {
+      "name": "Austin to Dallas",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"start\": {\"lat\": 30.2672, \"lon\": -97.7431},\n  \"finish\": {\"lat\": 32.7767, \"lon\": -96.7970}\n}\n"
+        },
+        "url": "{{baseUrl}}/api/v1/route/",
+        "description": "About 195 miles. The starting tank covers it, so the cost is 0.00 and there are no stops."
+      }
+    },
+    {
+      "name": "Austin to Los Angeles",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"start\": {\"lat\": 30.2672, \"lon\": -97.7431},\n  \"finish\": {\"lat\": 34.0522, \"lon\": -118.2437}\n}\n"
+        },
+        "url": "{{baseUrl}}/api/v1/route/",
+        "description": "About 1,380 miles. Needs several stops. The first 50 gallons were already in the tank and are not charged."
+      }
+    },
+    {
+      "name": "A latitude that is not a number",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"start\": {\"lat\": \"nope\", \"lon\": -97.7431},\n  \"finish\": {\"lat\": 32.7767, \"lon\": -96.7970}\n}\n"
+        },
+        "url": "{{baseUrl}}/api/v1/route/",
+        "description": "400. The body names the field."
+      }
+    },
+    {
+      "name": "A place outside the United States and Canada",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"start\": {\"lat\": 51.5074, \"lon\": -0.1278},\n  \"finish\": {\"lat\": 32.7767, \"lon\": -96.7970}\n}\n"
+        },
+        "url": "{{baseUrl}}/api/v1/route/",
+        "description": "London is outside the area. 400, and no routing call is made."
+      }
+    }
+  ]
+}

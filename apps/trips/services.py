@@ -42,8 +42,8 @@ class PointFarFromRoadError(Exception):
         self.miles = miles
         self.limit_miles = limit_miles
         super().__init__(
-            f"Your {which} point is {miles:.1f} miles from the nearest road "
-            f"(the limit is {limit_miles:g})."
+            f"Your {which} point is {_miles_past_the_limit(miles, limit_miles)} miles from "
+            f"the nearest road (the limit is {limit_miles:g})."
         )
 
     def __reduce__(self):
@@ -154,8 +154,28 @@ def _check_in_area(point: Coordinates, which: str) -> None:
         )
 
 
+def _miles_past_the_limit(miles: float, limit: float) -> str:
+    """The distance, to one decimal, unless that would round it back to the limit.
+
+    A point 5.04 miles away with a limit of 5 must not be described as 5.0. That reads as
+    if the point were allowed.
+    """
+    one_decimal = f"{miles:.1f}"
+    if float(one_decimal) > limit:
+        return one_decimal
+    for places in (4, 10):
+        text = f"{miles:.{places}f}"
+        if float(text) > limit:
+            return text.rstrip("0").rstrip(".")
+    return f"{miles:.16f}".rstrip("0").rstrip(".")
+
+
 def _build(route: ProviderRoute, limit: float) -> TripPlan:
     _check_snap(route, limit)
+    if _unusable(route.distance_miles) or _unusable(route.duration_seconds):
+        raise RoutingServiceError(
+            "The routing service sent a distance or duration that cannot be used."
+        )
     try:
         path = RoutePath.from_coordinates(route.coordinates)
     except ValueError as error:
@@ -213,6 +233,16 @@ def _snap_limit() -> float:
     if not math.isfinite(limit) or limit <= 0:
         raise ValueError(f"MAX_SNAP_MILES must be a positive number of miles, not {limit!r}.")
     return float(limit)
+
+
+def _unusable(value: object) -> bool:
+    """True when a reported length is not a real, non-negative number."""
+    return (
+        isinstance(value, bool)
+        or not isinstance(value, int | float)
+        or not math.isfinite(value)
+        or value < 0
+    )
 
 
 def _check_snap(route: ProviderRoute, limit: float) -> None:

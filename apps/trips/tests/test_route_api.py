@@ -4,13 +4,19 @@ The routing service is a fake. The stations are rows in the test database. Nothi
 touches the network.
 """
 
+import json
 import math
 
 import pytest
 from django.core.cache import cache
 from rest_framework.test import APIClient
 
-from apps.trips.providers.base import NoRouteFoundError, RoutingServiceError, RoutingTimeoutError
+from apps.trips.providers.base import (
+    NoRouteFoundError,
+    RoutingError,
+    RoutingServiceError,
+    RoutingTimeoutError,
+)
 from apps.trips.tests.geo_helpers import north_of
 from apps.trips.tests.test_service import ORIGIN, FakeRouting, road, station_at
 
@@ -70,8 +76,11 @@ class TestAPlannedTrip:
         assert body["route"]["duration_seconds"] == 40000
         assert body["route"]["geometry"] == {
             "type": "LineString",
-            # GeoJSON is longitude first, then latitude.
-            "coordinates": [[point.longitude, point.latitude] for point in route.coordinates],
+            # GeoJSON is longitude first, then latitude, to six decimals (about 10 cm).
+            "coordinates": [
+                [float(format(point.longitude, ".6f")), float(format(point.latitude, ".6f"))]
+                for point in route.coordinates
+            ],
         }
         assert body["margin_miles"] == 10
         assert body["fuel_stops"] == [
@@ -146,6 +155,25 @@ class TestAPlannedTrip:
 
         assert point == [ORIGIN.longitude, ORIGIN.latitude]
         assert point != [ORIGIN.latitude, ORIGIN.longitude]
+
+    def test_miles_and_coordinates_are_short_numbers(self, client, fake_router, make_station):
+        # A straight 600-mile road measures 599.9999999999991. Sent raw, that is what the
+        # caller would read, against a fuel total that already rounds to 60 gallons.
+        route, finish = road(600, distance_miles=1379.339812345, duration_seconds=12467.65)
+        station_at(make_station, north_of(ORIGIN, 300))
+        fake_router(route)
+
+        body = client.post(URL, places(ORIGIN, finish), format="json").json()
+
+        assert _fraction_digits(body["route"]["distance_miles"]) <= 3
+        assert _fraction_digits(body["route"]["measured_miles"]) <= 3
+        assert _fraction_digits(body["route"]["duration_seconds"]) <= 1
+        assert _fraction_digits(body["fuel_stops"][0]["mile_marker"]) <= 3
+        for longitude, latitude in body["route"]["geometry"]["coordinates"]:
+            assert _fraction_digits(longitude) <= 6
+            assert _fraction_digits(latitude) <= 6
+        assert body["route"]["measured_miles"] == 600
+        assert body["totals"]["gallons_consumed"] == "60.000"
 
 
 class TestBadRequests:
@@ -224,6 +252,20 @@ class TestTripsThatCannotBePlanned:
             "Your start point is 100.5 miles from the nearest road (the limit is 5)."
         )
 
+    def test_a_point_just_past_the_limit_is_not_described_as_on_it(
+        self, client, fake_router, settings
+    ):
+        settings.MAX_SNAP_MILES = 5
+        route, finish = road(200, finish_snap_miles=5.04)
+        fake_router(route)
+
+        response = client.post(URL, places(ORIGIN, finish), format="json")
+
+        assert response.status_code == 422
+        assert response.json()["detail"] == (
+            "Your finish point is 5.04 miles from the nearest road (the limit is 5)."
+        )
+
     def test_no_way_to_buy_fuel_along_the_road(self, client, fake_router):
         route, finish = road(600)
         fake_router(route)
@@ -263,6 +305,44 @@ class TestWhenTheRouterFails:
         body = response.json()
         assert body == {"detail": "Could not reach the routing service (ConnectionError)."}
         assert "Traceback" not in str(body)
+
+    def test_an_unclassified_routing_failure_is_502(self, client, fake_router):
+        fake_router(RoutingError("The routing service failed."))
+
+        response = client.post(URL, places(ORIGIN, north_of(ORIGIN, 200)), format="json")
+
+        assert response.status_code == 502
+        assert response.json() == {"detail": "The routing service failed."}
+
+    @pytest.mark.parametrize(
+        "overrides",
+        [
+            {"distance_miles": math.nan},
+            {"duration_seconds": math.inf},
+            {"distance_miles": -1.0},
+            {"duration_seconds": -5.0},
+        ],
+    )
+    def test_an_unusable_length_is_502_and_not_remembered(
+        self, client, fake_router, overrides, django_assert_num_queries
+    ):
+        route, finish = road(200, **overrides)
+        routing = fake_router(route)
+        payload = places(ORIGIN, finish)
+
+        with django_assert_num_queries(0):
+            response = client.post(URL, payload, format="json")
+        again = client.post(URL, payload, format="json")
+
+        assert response.status_code == again.status_code == 502
+        assert response.json()["detail"] == (
+            "The routing service sent a distance or duration that cannot be used."
+        )
+        assert len(routing.calls) == 2
+
+
+def _fraction_digits(number: float) -> int:
+    return len(json.dumps(number).partition(".")[2])
 
 
 def places_raw(start, finish):

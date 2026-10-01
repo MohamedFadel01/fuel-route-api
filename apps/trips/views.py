@@ -5,7 +5,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.trips.providers.base import NoRouteFoundError, RoutingServiceError, RoutingTimeoutError
+from apps.trips.providers.base import NoRouteFoundError, RoutingError, RoutingTimeoutError
 from apps.trips.serializers import RouteRequestSerializer, TripPlanSerializer
 from apps.trips.services import NoTripPlanError, PointFarFromRoadError, plan_trip
 
@@ -27,9 +27,11 @@ class RouteView(APIView):
             return _detail(str(error), status.HTTP_400_BAD_REQUEST)
         except (NoRouteFoundError, PointFarFromRoadError, NoTripPlanError) as error:
             return _detail(str(error), status.HTTP_422_UNPROCESSABLE_ENTITY)
+        # A timeout is a RoutingError too, so it has to be handled before the general case.
+        # No route is also a RoutingError, and that one is a 422 above.
         except RoutingTimeoutError as error:
             return _detail(str(error), status.HTTP_504_GATEWAY_TIMEOUT)
-        except RoutingServiceError as error:
+        except RoutingError as error:
             return _detail(str(error), status.HTTP_502_BAD_GATEWAY)
         return Response(TripPlanSerializer(plan).data)
 

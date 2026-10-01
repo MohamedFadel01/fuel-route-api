@@ -262,6 +262,28 @@ class TestFarFromARoad:
             "Your start point is 100.5 miles from the nearest road (the limit is 5)."
         )
 
+    @pytest.mark.parametrize(
+        ("limit", "miles", "shown"),
+        [
+            (5, 5.06, "5.1"),  # one decimal still shows that it is past the limit
+            (5, 5.04, "5.04"),  # one decimal would say 5.0, which is not past the limit
+            (5, 5.0001, "5.0001"),
+            (10, 10.02, "10.02"),
+        ],
+    )
+    def test_the_message_does_not_round_the_distance_back_to_the_limit(
+        self, settings, limit, miles, shown
+    ):
+        settings.MAX_SNAP_MILES = limit
+        route, finish = road(200, start_snap_miles=miles)
+
+        with pytest.raises(PointFarFromRoadError) as problem:
+            plan_trip(ORIGIN, finish, provider=FakeRouting(route))
+
+        assert str(problem.value) == (
+            f"Your start point is {shown} miles from the nearest road (the limit is {limit:g})."
+        )
+
     def test_the_limit_comes_from_the_settings(self, settings):
         settings.MAX_SNAP_MILES = 30
         route, finish = road(200, start_snap_miles=20)

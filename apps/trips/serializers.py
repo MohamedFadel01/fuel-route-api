@@ -70,12 +70,24 @@ class _StationSerializer(serializers.Serializer):
     state = serializers.CharField()
 
 
+def _json_float(value: float, places: int) -> float:
+    """A JSON number with at most ``places`` digits after the decimal.
+
+    A raw float keeps binary dust, so 600 miles would be sent as 599.9999999999991.
+    Formatting first, then reading that text back, gives a short number.
+    """
+    return float(format(value, f".{places}f"))
+
+
 class _FuelStopSerializer(serializers.Serializer):
     station = _StationSerializer(source="*")
-    mile_marker = serializers.FloatField()
+    mile_marker = serializers.SerializerMethodField()
     price_per_gallon = serializers.SerializerMethodField()
     gallons = serializers.DecimalField(max_digits=14, decimal_places=3)
     cost = serializers.DecimalField(max_digits=14, decimal_places=2)
+
+    def get_mile_marker(self, stop: PlannedStop) -> float:
+        return _json_float(stop.mile_marker, 3)
 
     def get_price_per_gallon(self, stop: PlannedStop) -> str:
         return _decimal_text(stop.price_per_gallon, 2)
@@ -91,8 +103,9 @@ class TripPlanSerializer(serializers.Serializer):
     """A planned trip as the API returns it.
 
     ``route.distance_miles`` is what the routing service reported. ``route.measured_miles``
-    is the length of the road, which is what the fuel figures are based on. The geometry is
-    GeoJSON, so each point is longitude then latitude.
+    is the length of the road, which is what the fuel figures are based on. Miles are given
+    to a thousandth and coordinates to six decimals, so floating-point dust is not sent.
+    The geometry is GeoJSON, so each point is longitude then latitude.
     """
 
     route = serializers.SerializerMethodField()
@@ -102,11 +115,14 @@ class TripPlanSerializer(serializers.Serializer):
 
     def get_route(self, plan: TripPlan) -> dict:
         return {
-            "distance_miles": plan.distance_miles,
-            "measured_miles": plan.measured_miles,
-            "duration_seconds": plan.duration_seconds,
+            "distance_miles": _json_float(plan.distance_miles, 3),
+            "measured_miles": _json_float(plan.measured_miles, 3),
+            "duration_seconds": _json_float(plan.duration_seconds, 1),
             "geometry": {
                 "type": "LineString",
-                "coordinates": [[point.longitude, point.latitude] for point in plan.geometry],
+                "coordinates": [
+                    [_json_float(point.longitude, 6), _json_float(point.latitude, 6)]
+                    for point in plan.geometry
+                ],
             },
         }

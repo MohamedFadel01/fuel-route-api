@@ -19,6 +19,21 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = env_str("DJANGO_SECRET_KEY") or get_random_secret_key()
 DEBUG = env_bool("DJANGO_DEBUG", default=False)
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
+# The local demo is plain HTTP. Turning these on there would redirect the browser to
+# https://localhost and, with HSTS, keep it there. Set DJANGO_USE_HTTPS when a proxy
+# terminates TLS and forwards X-Forwarded-Proto.
+USE_HTTPS = env_bool("DJANGO_USE_HTTPS", default=False)
+SECURE_SSL_REDIRECT = USE_HTTPS
+SECURE_HSTS_SECONDS = 31_536_000 if USE_HTTPS else 0
+SECURE_HSTS_INCLUDE_SUBDOMAINS = USE_HTTPS
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https") if USE_HTTPS else None
+X_FRAME_OPTIONS = "DENY"
+# The API does not use a CSRF cookie (its views are exempt). The flag is on so a cookie,
+# if one is ever set, is not sent over plain HTTP. The map posts JSON without one.
+CSRF_COOKIE_SECURE = True
+# These two warnings only apply to a site that is HTTPS everywhere. Silencing them on
+# the HTTP demo keeps `check --deploy` honest about everything else.
+SILENCED_SYSTEM_CHECKS = [] if USE_HTTPS else ["security.W004", "security.W008"]
 
 # --- Applications -----------------------------------------------------------
 INSTALLED_APPS = [
@@ -32,6 +47,8 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "django.middleware.common.CommonMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"

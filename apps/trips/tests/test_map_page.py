@@ -44,6 +44,12 @@ def test_the_page_loads(client, django_assert_num_queries):
     assert "&quot;" not in html.split('<script type="module">', 1)[1]
 
 
+def test_the_page_refuses_to_be_put_in_a_frame(client):
+    response = client.get(PAGE)
+
+    assert response["X-Frame-Options"] == "DENY"
+
+
 def test_posting_to_the_page_is_not_how_you_plan_a_trip(client):
     response = client.post(PAGE, {"start": {"lat": 40, "lon": -100}}, format="json")
 

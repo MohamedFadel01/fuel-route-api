@@ -9,6 +9,7 @@ import math
 
 import pytest
 from django.core.cache import cache
+from django.test import Client
 from rest_framework.test import APIClient
 
 from apps.trips.providers.base import (
@@ -27,6 +28,16 @@ pytestmark = pytest.mark.django_db
 @pytest.fixture
 def client():
     return APIClient()
+
+
+def test_planning_does_not_require_a_csrf_token():
+    # The map posts JSON from the browser with no cookie session. A CSRF check would
+    # reject every trip.
+    browser = Client(enforce_csrf_checks=True)
+
+    response = browser.post(URL, data=b"not json", content_type="application/json")
+
+    assert response.status_code != 403
 
 
 @pytest.fixture(autouse=True)

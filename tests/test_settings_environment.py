@@ -23,6 +23,7 @@ MANAGED_VARIABLES = (
     "OSRM_USER_AGENT",
     "MAX_SNAP_MILES",
     "TRIP_CACHE_SECONDS",
+    "DJANGO_USE_HTTPS",
 )
 PROBE = """
 import json
@@ -37,6 +38,9 @@ print(json.dumps({
     "osrm_user_agent": settings.OSRM_USER_AGENT,
     "max_snap_miles": settings.MAX_SNAP_MILES,
     "trip_cache_seconds": settings.TRIP_CACHE_SECONDS,
+    "ssl_redirect": settings.SECURE_SSL_REDIRECT,
+    "hsts_seconds": settings.SECURE_HSTS_SECONDS,
+    "silenced": list(settings.SILENCED_SYSTEM_CHECKS),
 }))
 """
 
@@ -179,3 +183,41 @@ class TestTripPlanningSettings:
 
         assert loaded["max_snap_miles"] == 5.0
         assert loaded["trip_cache_seconds"] == 3600
+
+
+class TestHttps:
+    def test_the_local_demo_stays_on_plain_http(self, load_settings):
+        # Forcing HTTPS, or sending HSTS, would make http://localhost refuse to load.
+        loaded = load_settings()
+
+        assert loaded["ssl_redirect"] is False
+        assert loaded["hsts_seconds"] == 0
+        assert "security.W004" in loaded["silenced"]
+        assert "security.W008" in loaded["silenced"]
+
+    def test_https_turns_on_the_redirect_and_strict_transport(self, load_settings):
+        loaded = load_settings(DJANGO_USE_HTTPS="true")
+
+        assert loaded["ssl_redirect"] is True
+        assert loaded["hsts_seconds"] == 31_536_000
+        assert "security.W004" not in loaded["silenced"]
+        assert "security.W008" not in loaded["silenced"]
+
+    def test_deploy_check_reports_no_issues(self):
+        env = {k: v for k, v in os.environ.items() if k not in MANAGED_VARIABLES}
+        env["DJANGO_SETTINGS_MODULE"] = "config.settings"
+        env["DJANGO_DEBUG"] = "false"
+
+        result = subprocess.run(
+            [sys.executable, "manage.py", "check", "--deploy"],
+            env=env,
+            cwd=BASE_DIR,
+            capture_output=True,
+            text=True,
+        )
+
+        output = result.stdout + result.stderr
+
+        assert result.returncode == 0
+        assert "no issues" in output
+        assert "WARNINGS" not in output

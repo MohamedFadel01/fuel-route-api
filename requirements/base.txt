@@ -3,3 +3,4 @@ djangorestframework>=3.18,<3.19
 numpy>=2.5,<3
 scipy>=1.18,<2
 requests>=2.34,<3
+gunicorn>=23,<26

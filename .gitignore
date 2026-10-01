@@ -216,3 +216,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Large GeoNames downloads (re-created on demand)
+data/geonames/

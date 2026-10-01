@@ -68,6 +68,20 @@ FUEL_PRICES_CSV = BASE_DIR / "data" / "fuel-prices-for-be-assessment.csv"
 # Large public place files (downloaded on demand, not committed to git).
 GEONAMES_DIR = BASE_DIR / "data" / "geonames"
 
+# --- Station geocoding (OpenStreetMap Nominatim) -----------------------------
+# The public server asks for an identifying User-Agent (ideally with a contact address)
+# and at most one request per second: https://operations.osmfoundation.org/policies/nominatim/
+NOMINATIM_BASE_URL = env_str(
+    "NOMINATIM_BASE_URL", default="https://nominatim.openstreetmap.org/search"
+)
+NOMINATIM_USER_AGENT = env_str(
+    "NOMINATIM_USER_AGENT", default="fuel-route-api/0.1 (assessment project)"
+)
+NOMINATIM_MIN_INTERVAL = 1.0  # seconds between requests
+NOMINATIM_BACKOFF_SECONDS = 5.0  # first wait when the server is busy; doubles per retry
+# A search hit further than this from the station's city is treated as a wrong match.
+STATION_MATCH_MAX_MILES = 25.0
+
 # --- Django REST framework --------------------------------------------------
 # A public, stateless JSON API: no sessions, no auth, no browsable HTML.
 REST_FRAMEWORK = {

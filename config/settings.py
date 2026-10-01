@@ -67,6 +67,8 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 FUEL_PRICES_CSV = BASE_DIR / "data" / "fuel-prices-for-be-assessment.csv"
 # Large public place files (downloaded on demand, not committed to git).
 GEONAMES_DIR = BASE_DIR / "data" / "geonames"
+# Result of the slow geocoding run, committed so locations can be restored instantly.
+STATION_LOCATIONS_CSV = BASE_DIR / "data" / "stations_geocoded.csv"
 
 # --- Station geocoding (OpenStreetMap Nominatim) -----------------------------
 # The public server asks for an identifying User-Agent (ideally with a contact address)

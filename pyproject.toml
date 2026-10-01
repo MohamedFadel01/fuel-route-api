@@ -29,6 +29,9 @@ select = [
     "PT",  # pytest style
     "RUF", # ruff-specific
 ]
+ignore = [
+    "RUF012", # false positive for Django's mutable class attributes (Meta.indexes, ...)
+]
 
 [tool.ruff.lint.per-file-ignores]
 "manage.py" = ["E402"]

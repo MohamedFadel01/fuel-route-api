@@ -52,6 +52,32 @@ p {
   color: #8a1f1f;
 }
 
+.popup {
+  white-space: pre-line;
+}
+
+@media (max-width: 700px) {
+  body {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .panel {
+    position: static;
+    width: auto;
+    max-height: 42vh;
+    border-radius: 0;
+    box-shadow: none;
+    border-bottom: 1px solid #e2e2e2;
+  }
+
+  #map {
+    height: auto;
+    flex: 1 1 auto;
+    min-height: 240px;
+  }
+}
+
 button {
   font: inherit;
   padding: 6px 10px;

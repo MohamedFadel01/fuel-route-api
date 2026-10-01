@@ -10,6 +10,7 @@ import {
   instructions,
   loadPlan,
   requestBody,
+  routeFetch,
   samePlace,
   stopText,
 } from "../static/trips/map.mjs";
@@ -133,6 +134,14 @@ test("a broken plan is not described", () => {
   assert.equal(describePlan({ route: {}, totals: {}, fuel_stops: "nope" }), null);
 });
 
+test("a distance that is not a real number is not shown as NaN miles", () => {
+  const totals = { total_cost: "0.00", gallons_purchased: "0.000" };
+
+  assert.equal(describePlan({ route: {}, totals, fuel_stops: [] }), null);
+  assert.equal(describePlan({ route: { distance_miles: Number.NaN }, totals, fuel_stops: [] }), null);
+  assert.equal(describePlan({ route: { distance_miles: 0 }, totals, fuel_stops: [] }).headline, "0 miles · $0.00");
+});
+
 test("an error message prefers the server's detail", () => {
   assert.equal(describeError({ detail: "Impossible route between points" }), "Impossible route between points");
 });
@@ -179,6 +188,35 @@ test("a refusal comes back as the server's message", async () => {
 
   assert.equal(result.ok, false);
   assert.match(result.message, /100\.5 miles/);
+});
+
+test("a slow server is not described as unreachable", async () => {
+  const error = new Error("The operation was aborted due to timeout");
+  error.name = "TimeoutError";
+
+  const result = await loadPlan(austin, dallas, async () => {
+    throw error;
+  });
+
+  assert.deepEqual(result, { ok: false, message: "The server took too long. Try again." });
+  assert.doesNotMatch(result.message, /aborted|timeout/i);
+});
+
+test("the route request stops waiting", async () => {
+  const error = await routeFetch(
+    requestBody(austin, dallas),
+    (_url, init) =>
+      new Promise((_resolve, reject) => {
+        init.signal.addEventListener("abort", () => {
+          const aborted = new Error("aborted");
+          aborted.name = "AbortError";
+          reject(aborted);
+        });
+      }),
+    20,
+  ).catch((caught) => caught);
+
+  assert.equal(error.name, "AbortError");
 });
 
 test("a server that does not answer is a short message", async () => {

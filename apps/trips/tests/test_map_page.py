@@ -62,6 +62,9 @@ def test_the_script_treats_station_names_as_text():
 
     assert "innerHTML" not in source
     assert "insertAdjacentHTML" not in source
+    # The script is pasted into the page. A closing tag in it would end the script early.
+    assert "</script>" not in source.lower()
+    assert "</style>" not in STYLE.read_text().lower()
     assert finders.find("trips/map.mjs")
     assert finders.find("trips/map.css")
     assert STYLE.read_text().strip()

@@ -2,6 +2,8 @@
 // Station names are written with textContent, never as HTML.
 
 export const NETWORK_ERROR = "Could not reach the server.";
+export const SLOW_SERVER = "The server took too long. Try again.";
+const PLAN_TIMEOUT_MS = 30_000;
 
 const START = { radius: 8, color: "#145c38", fillColor: "#1b7f4e", fillOpacity: 1, weight: 2 };
 const FINISH = { radius: 8, color: "#6e1d1d", fillColor: "#9d2c2c", fillOpacity: 1, weight: 2 };
@@ -48,9 +50,9 @@ export function stopText(stop) {
 
 export function describePlan(plan) {
   if (!plan?.route || !plan?.totals || !Array.isArray(plan.fuel_stops)) return null;
-  const miles = Number(plan.route.distance_miles).toLocaleString("en-US", {
-    maximumFractionDigits: 1,
-  });
+  const miles = Number(plan.route.distance_miles);
+  if (!Number.isFinite(miles)) return null;
+  const shown = miles.toLocaleString("en-US", { maximumFractionDigits: 1 });
   const stops = plan.fuel_stops.map(stopText);
   const count = plan.fuel_stops.length;
   const note =
@@ -58,7 +60,7 @@ export function describePlan(plan) {
       ? "No fuel stops. The starting tank covers this trip."
       : `${count} ${count === 1 ? "stop" : "stops"} · ${plan.totals.gallons_purchased} gallons bought`;
   return {
-    headline: `${miles} miles · $${plan.totals.total_cost}`,
+    headline: `${shown} miles · $${plan.totals.total_cost}`,
     note,
     stops,
   };
@@ -78,12 +80,33 @@ export function describeError(body) {
   return "The trip could not be planned.";
 }
 
+export function routeFetch(body, fetchImpl = globalThis.fetch, timeoutMs = PLAN_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  if (typeof timer.unref === "function") timer.unref();
+  return Promise.resolve()
+    .then(() =>
+      fetchImpl("/api/v1/route/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      }),
+    )
+    .finally(() => clearTimeout(timer));
+}
+
+function failureMessage(error) {
+  if (error && (error.name === "TimeoutError" || error.name === "AbortError")) return SLOW_SERVER;
+  return NETWORK_ERROR;
+}
+
 export async function loadPlan(start, finish, post) {
   let response;
   try {
     response = await post("/api/v1/route/", requestBody(start, finish));
-  } catch {
-    return { ok: false, message: NETWORK_ERROR };
+  } catch (error) {
+    return { ok: false, message: failureMessage(error) };
   }
   let body = null;
   try {
@@ -116,7 +139,9 @@ function boot() {
 
   let state = { start: null, finish: null };
   let busy = false;
+  let requestId = 0;
   let routeLine = null;
+  let lastBounds = null;
   const markers = [];
 
   function showInstructions() {
@@ -128,6 +153,7 @@ function boot() {
       map.removeLayer(routeLine);
       routeLine = null;
     }
+    lastBounds = null;
   }
 
   function clearMarkers() {
@@ -172,43 +198,51 @@ function boot() {
 
   function drawPlan(plan) {
     clearRoute();
-    showEnds();
+    clearMarkers();
     routeLine = L.geoJSON(
       { type: "Feature", properties: {}, geometry: plan.route.geometry },
       { style: { color: "#1d4e89", weight: 4 } },
     ).addTo(map);
+    if (state.start) addMarker(state.start, START);
+    if (state.finish) addMarker(state.finish, FINISH);
     for (const stop of plan.fuel_stops) {
-      const marker = addMarker({ lat: stop.station.lat, lon: stop.station.lon }, STOP);
+      const station = stop.station;
+      if (!station || !Number.isFinite(station.lat) || !Number.isFinite(station.lon)) continue;
+      const marker = addMarker(station, STOP);
       const text = stopText(stop);
       const node = document.createElement("div");
+      node.className = "popup";
       node.textContent = text.detail ? `${text.title}\n${text.detail}` : text.title;
       marker.bindPopup(node);
     }
-    const bounds = routeLine.getBounds();
-    if (!bounds.isValid()) return;
+    lastBounds = routeLine.getBounds();
+    frameRoute();
+  }
+
+  function frameRoute() {
+    if (!lastBounds || !lastBounds.isValid()) return;
     if (state.start && state.finish && samePlace(state.start, state.finish)) {
       map.setView([state.start.lat, state.start.lon], 12);
       return;
     }
-    const wide = window.innerWidth > 700;
-    map.fitBounds(bounds, {
-      paddingTopLeft: [wide ? 400 : 24, wide ? 24 : 180],
-      paddingBottomRight: [24, 24],
-    });
+    // Keep the line out from under the panel, but never pad by more than the map has.
+    const size = map.getSize();
+    const left = Math.min(window.innerWidth > 700 ? 380 : 28, Math.max(0, size.x / 2 - 40));
+    try {
+      map.fitBounds(lastBounds, { paddingTopLeft: [left, 28], paddingBottomRight: [28, 28] });
+    } catch {
+      // A very small map can refuse the frame. The line is already drawn.
+    }
   }
 
   async function planTrip() {
+    const id = ++requestId;
     busy = true;
     showInstructions();
     statusEl.textContent = "";
     try {
-      const result = await loadPlan(state.start, state.finish, (url, body) =>
-        fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Accept: "application/json" },
-          body: JSON.stringify(body),
-        }),
-      );
+      const result = await loadPlan(state.start, state.finish, (_url, body) => routeFetch(body));
+      if (id !== requestId) return;
       if (!result.ok) {
         hideResult();
         clearRoute();
@@ -217,30 +251,48 @@ function boot() {
       }
       statusEl.textContent = "";
       showResult(result.described);
-      drawPlan(result.plan);
+      try {
+        drawPlan(result.plan);
+      } catch {
+        statusEl.textContent = "The trip is planned, but the map could not draw it.";
+      }
     } catch {
+      if (id !== requestId) return;
       hideResult();
       clearRoute();
       statusEl.textContent = "The trip could not be planned.";
     } finally {
-      busy = false;
-      showInstructions();
+      if (id === requestId) {
+        busy = false;
+        showInstructions();
+      }
     }
   }
 
   map.on("click", (event) => {
-    if (busy) return;
     state = afterClick(state, fromLeaflet(event.latlng));
     clearRoute();
     hideResult();
     statusEl.textContent = "";
     showEnds();
-    showInstructions();
-    if (state.plan) planTrip();
+    if (state.plan) {
+      planTrip();
+    } else {
+      // A new start cancels a trip that was still being planned.
+      requestId += 1;
+      busy = false;
+      showInstructions();
+    }
+  });
+
+  window.addEventListener("resize", () => {
+    map.invalidateSize();
+    frameRoute();
   });
 
   document.querySelector("#reset").addEventListener("click", () => {
-    if (busy) return;
+    requestId += 1;
+    busy = false;
     state = { start: null, finish: null };
     clearRoute();
     clearMarkers();
@@ -252,4 +304,13 @@ function boot() {
   showInstructions();
 }
 
-if (typeof document !== "undefined") boot();
+if (typeof document !== "undefined") {
+  try {
+    boot();
+  } catch {
+    const status = document.querySelector("#status");
+    if (status) {
+      status.textContent = "The map could not be loaded. Check your connection and reload the page.";
+    }
+  }
+}

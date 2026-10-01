@@ -5,9 +5,9 @@ import pytest
 import requests
 import responses
 
+from apps.common.geo import Coordinates
 from apps.stations.geocoding.gazetteer import GazetteerError
 from apps.stations.geocoding.geonames import download_geonames, load_gazetteer
-from apps.stations.geocoding.types import Coordinates
 
 URL_US = "https://download.geonames.org/export/dump/US.zip"
 URL_CA = "https://download.geonames.org/export/dump/CA.zip"

@@ -3,12 +3,12 @@ import zipfile
 
 import pytest
 
+from apps.common.geo import Coordinates
 from apps.stations.geocoding.gazetteer import (
     CityGazetteer,
     GazetteerError,
     normalize_place_name,
 )
-from apps.stations.geocoding.types import Coordinates
 
 
 def geonames_line(

@@ -13,7 +13,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
-from apps.stations.geocoding.types import Coordinates
+from apps.common.geo import Coordinates
 
 # GeoNames columns used (tab separated): name, asciiname, alternatenames,
 # latitude, longitude, feature class, admin1 code (state) and population.

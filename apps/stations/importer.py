@@ -1,5 +1,6 @@
 """Store cleaned station records in the database."""
 
+from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass
 
@@ -24,7 +25,9 @@ class ImportSummary:
 def save_stations(records: Iterable[StationRecord]) -> ImportSummary:
     """Insert new stations and refresh the CSV fields of existing ones (matched by OPIS ID).
 
-    The whole import runs in one transaction, so a failure leaves the database untouched.
+    Each OPIS ID may appear only once in ``records`` (``load_stations`` guarantees this);
+    otherwise a ``ValueError`` is raised before anything is written. The whole import
+    runs in one transaction, so a failure leaves the database untouched.
     """
     stations = [
         Station(
@@ -40,6 +43,11 @@ def save_stations(records: Iterable[StationRecord]) -> ImportSummary:
     ]
     if not stations:
         return ImportSummary(created=0, updated=0)
+
+    repeated = sorted(id_ for id_, n in Counter(s.opis_id for s in stations).items() if n > 1)
+    if repeated:
+        listed = ", ".join(map(str, repeated[:10]))
+        raise ValueError(f"Duplicate OPIS IDs in input: {listed}")
 
     with transaction.atomic():
         count_before = Station.objects.count()

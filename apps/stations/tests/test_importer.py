@@ -122,6 +122,29 @@ class TestSaveStations:
         assert summary == ImportSummary(created=1300, updated=0)
         assert Station.objects.count() == 1300
 
+    def test_repeated_ids_in_the_input_are_rejected(self):
+        records = [make_record(5), make_record(6), make_record(5, price=Decimal("2.0"))]
+
+        with pytest.raises(ValueError, match="5"):
+            save_stations(records)
+
+    def test_a_rejected_input_writes_nothing(self):
+        with pytest.raises(ValueError, match="Duplicate"):
+            save_stations([make_record(1), make_record(2), make_record(1)])
+
+        assert Station.objects.count() == 0
+
+    def test_the_error_lists_every_repeated_id_once(self):
+        records = [make_record(i) for i in (3, 3, 3, 4, 4, 9)]
+
+        with pytest.raises(ValueError, match="Duplicate") as error:
+            save_stations(records)
+
+        message = str(error.value)
+        assert message.count("3") == 1
+        assert "4" in message
+        assert "9" not in message
+
     def test_accepts_any_iterable(self):
         summary = save_stations(make_record(i) for i in (1, 2))
 

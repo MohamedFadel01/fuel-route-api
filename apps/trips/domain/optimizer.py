@@ -12,8 +12,7 @@ The rule it follows, standing at a station with some fuel in the tank:
    The finish counts as a station with a price of zero, so the finish is the "cheaper
    station" when nothing else is cheaper and it is within reach.
 2. Otherwise this station is the cheapest within reach: fill the tank, then drive to the
-   cheapest station within reach (the farthest one if several cost the same, which means
-   fewer stops).
+   cheapest station within reach (the farthest one if several cost the same).
 
 This is the classic greedy answer to the "gas station problem", and it is provably the
 cheapest. The tests check it against an exact linear-programming solver on random trips.
@@ -23,8 +22,9 @@ can cover, no plan exists and ``NoFuelPlanError`` says where the gap is.
 
 Money and gallons are ``Decimal``: gallons are rounded to a thousandth and each stop's cost
 to the cent (halves round up). The totals are sums of the rounded stops, so the numbers the
-caller shows always add up. The rounding changes the fuel in the tank by under a hundredth
-of a mile per stop.
+caller shows always add up. The rounding moves the fuel in the tank by at most 0.005 of a
+mile per stop (about 25 feet), so over a whole trip the tank can end up a few hundred feet
+from what the numbers say, which does not matter.
 
 Everything here is plain Python, with no database and no network.
 """
@@ -34,7 +34,7 @@ from bisect import bisect_right
 from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from itertools import pairwise
 
 from apps.trips.domain.corridor import StationOnRoute
@@ -73,6 +73,11 @@ class NoFuelPlanError(Exception):
     @property
     def gap_miles(self) -> float:
         return self.gap_end_mile - self.gap_start_mile
+
+    def __reduce__(self):
+        # Exceptions are rebuilt from their message by default, which does not fit these
+        # arguments. This makes copying and pickling work (caches, other processes).
+        return (type(self), (self.gap_start_mile, self.gap_end_mile, self.range_miles))
 
 
 @dataclass(frozen=True, slots=True)
@@ -146,7 +151,13 @@ def plan_fuel_stops(
         fuel = max(fuel + to_buy - (markers[target] - here), 0.0)
         node = target
 
-    return _build_plan(total_miles, usable, purchases, miles_per_gallon=miles_per_gallon)
+    try:
+        return _build_plan(total_miles, usable, purchases, miles_per_gallon=miles_per_gallon)
+    except InvalidOperation:
+        raise ValueError(
+            f"A trip of {total_miles:g} miles at {miles_per_gallon:g} miles per gallon is "
+            f"too large to price."
+        ) from None
 
 
 def _check_vehicle(range_miles: float, miles_per_gallon: float) -> None:

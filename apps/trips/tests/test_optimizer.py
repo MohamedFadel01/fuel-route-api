@@ -7,8 +7,11 @@ Hand-made cases come first, each with an answer worked out on paper. The last cl
 compares the planner with an exact linear-programming solver on hundreds of random trips.
 """
 
+import copy
 import dataclasses
+import itertools
 import math
+import pickle
 import random
 import time
 from decimal import Decimal
@@ -254,6 +257,20 @@ class TestWhenNoPlanExists:
         assert "900" in message
         assert "500" in message
 
+    def test_the_error_survives_copying_and_pickling(self):
+        # Needed as soon as an error is cached or sent between processes.
+        with pytest.raises(NoFuelPlanError) as problem:
+            plan_fuel_stops(1200.0, [at(300, "3.00", 1), at(900, "3.00", 2)])
+
+        for clone in (copy.copy(problem.value), pickle.loads(pickle.dumps(problem.value))):
+            assert isinstance(clone, NoFuelPlanError)
+            assert str(clone) == str(problem.value)
+            assert (clone.gap_start_mile, clone.gap_end_mile, clone.range_miles) == (
+                300.0,
+                900.0,
+                500.0,
+            )
+
     def test_it_is_an_ordinary_exception_that_callers_can_catch_by_name(self):
         assert issubclass(NoFuelPlanError, Exception)
         assert not issubclass(NoFuelPlanError, ValueError)  # bad input is a different problem
@@ -412,6 +429,21 @@ class TestInputChecks:
     def test_the_fuel_economy_must_be_positive_and_finite(self, value):
         with pytest.raises(ValueError, match="miles per gallon"):
             plan_fuel_stops(100.0, [], miles_per_gallon=value)
+
+    @pytest.mark.parametrize(
+        ("total", "range_miles", "miles_per_gallon"),
+        [(1e30, 1e31, 10.0), (800.0, 500.0, 1e-30), (1e28, 1e29, 1.0)],
+    )
+    def test_numbers_too_big_to_price_are_a_clear_error_not_a_decimal_crash(
+        self, total, range_miles, miles_per_gallon
+    ):
+        with pytest.raises(ValueError, match="too large"):
+            plan_fuel_stops(
+                total,
+                [at(400, "3.00", 1)] if total < 1000 else [],
+                range_miles=range_miles,
+                miles_per_gallon=miles_per_gallon,
+            )
 
     @pytest.mark.parametrize("price", ["0", "-3.00", "NaN", "Infinity", "-Infinity"])
     def test_prices_must_be_positive_and_finite(self, price):
@@ -619,6 +651,73 @@ class TestAgainstLinearProgramming:
         assert cheapest_possible_cost(800.0, [stations[0]], 500.0, 10.0) == pytest.approx(150.0)
         assert cheapest_possible_cost(1100.0, [stations[0]], 500.0, 10.0) is None
         assert cheapest_possible_cost(300.0, [], 500.0, 10.0) == 0.0
+
+
+def exact_cheapest_cost(total, stations, range_miles):
+    """The true minimum by exhaustive search, in whole miles with integer prices.
+
+    ``stations`` is a list of (mile marker, price in thousandths of a dollar per gallon).
+    Returns the cost as miles bought times price in thousandths (divide by 10 miles per gallon
+    and by 1000 to get dollars), or ``None`` when no plan exists. It tracks every possible
+    fuel level arriving at each station, so it shares nothing with the planner or with the
+    linear-programming check.
+    """
+    nodes = [(0, None), *sorted((m, p) for m, p in stations if m < total), (total, None)]
+    best = {range_miles: 0}  # fuel on arrival (miles) -> cheapest cost so far
+    for (here, price), (ahead, _) in itertools.pairwise(nodes):
+        gap = ahead - here
+        following = {}
+        for fuel, cost in best.items():
+            for bought in range(0, 1 if price is None else range_miles - fuel + 1):
+                left = fuel + bought - gap
+                if left >= 0:
+                    spent = cost + bought * (price or 0)
+                    if spent < following.get(left, spent + 1):
+                        following[left] = spent
+        best = following
+        if not best:
+            return None
+    return min(best.values())
+
+
+class TestAgainstExhaustiveSearch:
+    def test_costs_match_exactly_with_no_tolerance(self):
+        generator = random.Random(11)
+        feasible = infeasible = 0
+        for _ in range(1500):
+            range_miles = generator.choice([20, 35, 50, 100])
+            total = generator.randint(1, range_miles * 4)
+            raw = []
+            for _ in range(generator.randint(0, 14)):
+                marker = generator.choice([0, total, generator.randint(0, total)])
+                if raw and generator.random() < 0.2:
+                    marker = generator.choice(raw)[0]  # same spot as another station
+                price = generator.choice([2999, 3000, 3499, generator.randint(2500, 4500)])
+                raw.append((marker, price))
+            stations = [at(m, Decimal(p) / 1000, i) for i, (m, p) in enumerate(raw, 1)]
+            best = exact_cheapest_cost(total, raw, range_miles)
+
+            if best is None:
+                infeasible += 1
+                with pytest.raises(NoFuelPlanError):
+                    plan_fuel_stops(float(total), stations, range_miles=float(range_miles))
+                continue
+
+            feasible += 1
+            plan = plan_fuel_stops(float(total), stations, range_miles=float(range_miles))
+            # Whole miles at 10 mpg are exact tenths of a gallon, so before the per-stop
+            # rounding to cents the planner's cost must equal the true minimum exactly.
+            # (best is miles * thousandths of a dollar per gallon; divide by 10 mpg, then 1000.)
+            assert sum(stop.gallons * stop.price for stop in plan.stops) == Decimal(best) / 10000
+        assert feasible > 500
+        assert infeasible > 500
+
+    def test_the_search_itself_is_right_on_a_hand_worked_case(self):
+        # 800 miles, tank 500: mile 400 costs 5.000, mile 600 costs 3.000. The best plan buys
+        # 100 miles at 5.000 and 200 miles at 3.000: 100*5000 + 200*3000 = 1,100,000.
+        assert exact_cheapest_cost(800, [(400, 5000), (600, 3000)], 500) == 1_100_000
+        assert exact_cheapest_cost(1100, [(400, 5000)], 500) is None
+        assert exact_cheapest_cost(300, [], 500) == 0
 
 
 class TestSpeed:

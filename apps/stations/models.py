@@ -39,6 +39,13 @@ class Station(models.Model):
                 name="station_coords_set_together",
             ),
             models.CheckConstraint(
+                condition=(
+                    Q(latitude__isnull=True, location_precision="")
+                    | (Q(latitude__isnull=False) & ~Q(location_precision=""))
+                ),
+                name="station_precision_matches_coords",
+            ),
+            models.CheckConstraint(
                 condition=Q(latitude__isnull=True) | Q(latitude__range=(-90, 90)),
                 name="station_latitude_in_range",
             ),

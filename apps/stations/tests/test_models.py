@@ -86,8 +86,8 @@ class TestStationCoordinatesConstraints:
     @pytest.mark.parametrize(
         "coordinates",
         [
-            {"latitude": 40.0},
-            {"longitude": -100.0},
+            {"latitude": 40.0, "location_precision": "city"},
+            {"longitude": -100.0, "location_precision": "city"},
         ],
         ids=["latitude-only", "longitude-only"],
     )
@@ -98,10 +98,10 @@ class TestStationCoordinatesConstraints:
     @pytest.mark.parametrize(
         "coordinates",
         [
-            {"latitude": 90.01, "longitude": 0.0},
-            {"latitude": -90.01, "longitude": 0.0},
-            {"latitude": 0.0, "longitude": 180.01},
-            {"latitude": 0.0, "longitude": -180.01},
+            {"latitude": 90.01, "longitude": 0.0, "location_precision": "city"},
+            {"latitude": -90.01, "longitude": 0.0, "location_precision": "city"},
+            {"latitude": 0.0, "longitude": 180.01, "location_precision": "city"},
+            {"latitude": 0.0, "longitude": -180.01, "location_precision": "city"},
         ],
         ids=["lat-too-high", "lat-too-low", "lon-too-high", "lon-too-low"],
     )
@@ -115,10 +115,41 @@ class TestStationCoordinatesConstraints:
         ids=["max-corner", "min-corner", "zero-zero"],
     )
     def test_boundary_and_zero_coordinates_are_accepted(self, make_station, latitude, longitude):
-        station = make_station(latitude=latitude, longitude=longitude)
+        station = make_station(latitude=latitude, longitude=longitude, location_precision="city")
 
         saved = Station.objects.get(pk=station.pk)
         assert (saved.latitude, saved.longitude) == (latitude, longitude)
+
+
+class TestStationPrecisionConstraint:
+    def test_precision_without_coordinates_is_rejected(self, make_station):
+        with pytest.raises(IntegrityError):
+            make_station(location_precision="poi")
+
+    def test_coordinates_without_precision_are_rejected(self, make_station):
+        with pytest.raises(IntegrityError):
+            make_station(latitude=40.0, longitude=-100.0)
+
+    @pytest.mark.parametrize("precision", ["poi", "city"])
+    def test_coordinates_with_a_precision_are_accepted(self, make_station, precision):
+        station = make_station(latitude=40.0, longitude=-100.0, location_precision=precision)
+
+        assert Station.objects.get(pk=station.pk).location_precision == precision
+
+    def test_inconsistent_station_fails_validation(self):
+        station = Station(
+            opis_id=1,
+            name="X",
+            address="A",
+            city="C",
+            state="TX",
+            rack_id=1,
+            price=Decimal("3.00"),
+            location_precision="poi",
+        )
+
+        with pytest.raises(ValidationError):
+            station.full_clean()
 
 
 class TestStationValidation:

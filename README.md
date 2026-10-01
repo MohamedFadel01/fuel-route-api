@@ -31,6 +31,13 @@ The fuel price file has no coordinates, so each station is located in two tiers:
    state, near the station's city and has a name that plausibly matches the station.
 2. **City centre** from GeoNames, when no verified exact position exists.
 
+Each station is labelled `poi` (exact) or `city` (approximate: somewhere in its city). A
+search for a chain name returns one place, which would otherwise be given to every store of
+that chain in the city. So whenever several stations end up on the same position, none of
+them is called exact: they are relabelled `city` (their position is kept).
+`geocode_stations` does this at the end of every run; `demote_shared_locations` does it on
+its own.
+
 ```bash
 python manage.py geocode_stations              # locate stations not yet located (resumable)
 python manage.py geocode_stations --limit 20   # try a small batch first

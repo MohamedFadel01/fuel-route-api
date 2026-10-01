@@ -51,6 +51,17 @@ class RoutePath:
     mile_markers: np.ndarray
     unit_vectors: np.ndarray
 
+    def __post_init__(self) -> None:
+        # The arrays are copied, so later changes to the caller's arrays cannot reach us,
+        # and then frozen. ``object.__setattr__`` is how a frozen dataclass sets fields.
+        markers = np.array(self.mile_markers, dtype=float)
+        vectors = np.array(self.unit_vectors, dtype=float)
+        _check(self.total_miles, self.spacing_miles, markers, vectors)
+        markers.setflags(write=False)
+        vectors.setflags(write=False)
+        object.__setattr__(self, "mile_markers", markers)
+        object.__setattr__(self, "unit_vectors", vectors)
+
     def __len__(self) -> int:
         return len(self.mile_markers)
 
@@ -92,31 +103,50 @@ class RoutePath:
         vectors = np.array([unit_vector(vertex) for vertex in vertices])
 
         if total == 0.0:
-            return cls._build(0.0, 0.0, np.array([0.0]), vectors[:1])
+            return cls(0.0, 0.0, np.array([0.0]), vectors[:1])
 
-        gaps = math.ceil(total / spacing_miles)
-        if gaps + 1 > MAX_POINTS:
+        # Compared as a float first: an absurdly small spacing overflows to infinity, which
+        # ``math.ceil`` cannot turn into an integer.
+        if total / spacing_miles > MAX_POINTS - 1:
             raise ValueError(
                 f"A spacing of {spacing_miles} miles on a {total:.0f}-mile route would "
                 f"create too many points (the limit is {MAX_POINTS})"
             )
+        gaps = math.ceil(total / spacing_miles)
         markers = np.linspace(0.0, total, gaps + 1)
-        return cls._build(
-            total,
-            total / gaps,
-            markers,
-            _vectors_at(markers, miles_at_vertex, legs, vectors),
+        return cls(
+            total_miles=total,
+            spacing_miles=total / gaps,
+            mile_markers=markers,
+            unit_vectors=_vectors_at(markers, miles_at_vertex, legs, vectors),
         )
 
-    @classmethod
-    def _build(
-        cls, total: float, spacing: float, markers: np.ndarray, vectors: np.ndarray
-    ) -> "RoutePath":
-        markers.setflags(write=False)
-        vectors.setflags(write=False)
-        return cls(
-            total_miles=total, spacing_miles=spacing, mile_markers=markers, unit_vectors=vectors
+
+def _check(total: float, spacing: float, markers: np.ndarray, vectors: np.ndarray) -> None:
+    """Refuse arrays that cannot describe a route resampled by ``from_coordinates``."""
+    if not (math.isfinite(total) and total >= 0):
+        raise ValueError(f"total_miles must be zero or more miles, got {total}")
+    if not (math.isfinite(spacing) and spacing >= 0):
+        raise ValueError(f"spacing_miles must be zero or more miles, got {spacing}")
+    if markers.ndim != 1:
+        raise ValueError("The mile markers must be one-dimensional")
+    if len(markers) == 0:
+        raise ValueError("A path needs at least one point")
+    if vectors.shape != (len(markers), 3):
+        raise ValueError(
+            f"There must be one unit vector per mile marker: {len(markers)} markers "
+            f"but vectors of shape {vectors.shape}"
         )
+    if not (np.isfinite(markers).all() and np.isfinite(vectors).all()):
+        raise ValueError("Mile markers and vectors must be finite numbers")
+    if markers[0] != 0:
+        raise ValueError("The mile markers must start at 0")
+    if not np.all(np.diff(markers) > 0):
+        raise ValueError("The mile markers must be strictly increasing")
+    if not math.isclose(markers[-1], total, rel_tol=1e-9, abs_tol=1e-12):
+        raise ValueError("The mile markers must end at the total miles")
+    if not np.allclose(np.linalg.norm(vectors, axis=1), 1.0, atol=1e-9):
+        raise ValueError("Every vector must be a unit vector (length 1)")
 
 
 def _vectors_at(

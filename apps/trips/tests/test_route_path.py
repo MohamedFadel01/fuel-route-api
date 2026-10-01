@@ -1,11 +1,12 @@
 import dataclasses
 import math
+import random
 from itertools import pairwise
 
 import numpy as np
 import pytest
 
-from apps.common.geo import EARTH_RADIUS_MILES, Coordinates, haversine_miles
+from apps.common.geo import EARTH_RADIUS_MILES, Coordinates, haversine_miles, unit_vector
 from apps.trips.domain.route_path import DEFAULT_SPACING_MILES, RoutePath
 
 START = Coordinates(40.0, -100.0)
@@ -39,6 +40,11 @@ class TestInput:
     def test_refuses_to_build_an_absurd_number_of_points(self):
         with pytest.raises(ValueError, match="too many"):
             RoutePath.from_coordinates(straight_north(100), spacing_miles=1e-6)
+
+    @pytest.mark.parametrize("spacing", [1e-30, 1e-310, 5e-324])
+    def test_a_microscopic_spacing_is_refused_not_a_crash(self, spacing):
+        with pytest.raises(ValueError, match="too many"):
+            RoutePath.from_coordinates(straight_north(100), spacing_miles=spacing)
 
     def test_the_point_limit_is_inclusive(self, monkeypatch):
         monkeypatch.setattr("apps.trips.domain.route_path.MAX_POINTS", 11)
@@ -183,7 +189,7 @@ class TestMileMarkers:
     def test_custom_spacing(self):
         path = RoutePath.from_coordinates(straight_north(100.0), spacing_miles=2.0)
 
-        assert len(path) == pytest.approx(51, abs=1)
+        assert len(path) == math.ceil(path.total_miles / 2.0) + 1
         assert np.diff(path.mile_markers).max() <= 2.0 + 1e-12
 
     def test_a_very_long_route(self):
@@ -309,15 +315,16 @@ class TestUnitVectors:
 
         assert np.linalg.norm(path.unit_vectors, axis=1) == pytest.approx(1.0, abs=1e-12)
 
-    def test_points_are_the_vectors_converted_back(self):
-        path = RoutePath.from_coordinates(straight_north(30.0))
-        first = path.points[0]
+    def test_points_and_vectors_describe_the_same_places(self):
+        path = RoutePath.from_coordinates(straight_north(30.0, vertices=4))
 
-        assert (first.latitude, first.longitude) == pytest.approx((START.latitude, START.longitude))
-        assert path.points[3] == Coordinates(
-            math.degrees(math.asin(path.unit_vectors[3][2])),
-            math.degrees(math.atan2(path.unit_vectors[3][1], path.unit_vectors[3][0])),
-        )
+        for point, vector in zip(path.points, path.unit_vectors, strict=True):
+            assert unit_vector(point) == pytest.approx(tuple(vector), abs=1e-12)
+
+    def test_the_points_are_cached(self):
+        path = RoutePath.from_coordinates(straight_north(30.0))
+
+        assert path.points is path.points
 
 
 class TestImmutability:
@@ -334,3 +341,142 @@ class TestImmutability:
 
         with pytest.raises(dataclasses.FrozenInstanceError):
             path.total_miles = 1.0
+
+
+def valid_arrays(count=3):
+    markers = np.linspace(0.0, 2.0, count)
+    vectors = np.array([unit_vector(north_of(START, mile)) for mile in markers])
+    return markers, vectors
+
+
+def build(markers=None, vectors=None, total=2.0, spacing=1.0):
+    default_markers, default_vectors = valid_arrays()
+    return RoutePath(
+        total_miles=total,
+        spacing_miles=spacing,
+        mile_markers=default_markers if markers is None else markers,
+        unit_vectors=default_vectors if vectors is None else vectors,
+    )
+
+
+class TestBuildingDirectly:
+    """``from_coordinates`` is the normal way in, but the constructor must not accept nonsense."""
+
+    def test_valid_arrays_are_accepted(self):
+        path = build()
+
+        assert len(path) == 3
+        assert close(path.points[0], START)
+
+    def test_the_arrays_are_copied_and_frozen_without_touching_the_callers(self):
+        markers, vectors = valid_arrays()
+
+        path = build(markers, vectors)
+        markers[1] = 99.0
+
+        assert path.mile_markers[1] == 1.0
+        assert markers.flags.writeable
+        assert not path.mile_markers.flags.writeable
+        assert not path.unit_vectors.flags.writeable
+
+    def test_a_single_point_path_is_accepted(self):
+        markers, vectors = valid_arrays(count=1)
+
+        path = build(markers[:1], vectors[:1], total=0.0, spacing=0.0)
+
+        assert len(path) == 1
+
+    @pytest.mark.parametrize(
+        ("change", "message"),
+        [
+            ({"markers": np.zeros((3, 1))}, "one-dimensional"),
+            ({"markers": np.array([])}, "at least one"),
+            ({"markers": np.array([0.0, 1.0])}, "one unit vector per"),
+            ({"vectors": np.zeros((3, 2))}, "one unit vector per"),
+            ({"markers": np.array([0.0, np.nan, 2.0])}, "finite"),
+            ({"markers": np.array([0.5, 1.0, 2.0])}, "start at 0"),
+            ({"markers": np.array([0.0, 1.0, 1.0])}, "increasing"),
+            ({"markers": np.array([0.0, 2.0, 1.0])}, "increasing"),
+            ({"markers": np.array([0.0, 1.0, 3.0])}, "end at the total"),
+            ({"vectors": np.full((3, 3), np.nan)}, "finite"),
+            ({"vectors": np.full((3, 3), 2.0)}, "unit"),
+            ({"total": -2.0}, "total_miles must"),
+            ({"total": math.nan}, "total_miles must"),
+            ({"spacing": -1.0}, "spacing_miles must"),
+            ({"spacing": math.inf}, "spacing_miles must"),
+        ],
+    )
+    def test_nonsense_is_refused(self, change, message):
+        with pytest.raises(ValueError, match=message):
+            build(**change)
+
+
+class TestRandomRoutes:
+    """Messy routes (repeats, doubling back, odd places) checked against brute force."""
+
+    @staticmethod
+    def random_route(generator):
+        def move(point, heading, miles):
+            distance = miles / EARTH_RADIUS_MILES
+            lat, lon = math.radians(point.latitude), math.radians(point.longitude)
+            new_lat = math.asin(
+                math.sin(lat) * math.cos(distance)
+                + math.cos(lat) * math.sin(distance) * math.cos(heading)
+            )
+            new_lon = lon + math.atan2(
+                math.sin(heading) * math.sin(distance) * math.cos(lat),
+                math.cos(distance) - math.sin(lat) * math.sin(new_lat),
+            )
+            return Coordinates(math.degrees(new_lat), (math.degrees(new_lon) + 540) % 360 - 180)
+
+        start = Coordinates(
+            generator.choice([generator.uniform(25, 49), generator.uniform(-60, 80), 0.0, 88.0]),
+            generator.choice([generator.uniform(-125, -67), 179.9, -179.9, 0.0]),
+        )
+        route, heading = [start], generator.uniform(0, 2 * math.pi)
+        for _ in range(generator.randint(1, 120)):
+            roll = generator.random()
+            if roll < 0.05:
+                route.append(route[-1])  # a repeated vertex
+                continue
+            if roll < 0.08:
+                heading += math.pi  # turning back
+            heading += generator.gauss(0, 0.4)
+            route.append(move(route[-1], heading, 10 ** generator.uniform(-3, 1.9)))
+        return route
+
+    def test_invariants_and_positions(self):
+        generator = random.Random(2024)
+
+        def angle(a, b):
+            return 2 * np.arcsin(np.clip(np.linalg.norm(a - b, axis=-1) / 2, 0, 1))
+
+        for _ in range(150):
+            route = self.random_route(generator)
+            spacing = 10 ** generator.uniform(-1.3, 0.7)
+            path = RoutePath.from_coordinates(route, spacing_miles=spacing)
+            markers = path.mile_markers
+
+            if path.total_miles == 0:
+                assert len(path) == 1
+                continue
+            assert markers[0] == 0
+            assert markers[-1] == path.total_miles
+            assert len(path) == math.ceil(path.total_miles / spacing) + 1
+            assert np.diff(markers).max() <= spacing * (1 + 1e-12)
+            assert close(path.points[0], route[0])
+            assert close(path.points[-1], route[-1])
+
+            # Every point must lie on some leg, at exactly the distance its marker claims.
+            vectors = np.array([unit_vector(vertex) for vertex in route])
+            legs = np.array([haversine_miles(a, b) for a, b in pairwise(route)])
+            before = np.concatenate(([0.0], np.cumsum(legs)))[:-1]
+            start_vectors, end_vectors = vectors[:-1], vectors[1:]
+            for k in generator.sample(range(len(path)), min(20, len(path))):
+                here = path.unit_vectors[k]
+                from_start, to_end = angle(start_vectors, here), angle(here, end_vectors)
+                off_the_leg = (from_start + to_end - angle(start_vectors, end_vectors)) * (
+                    EARTH_RADIUS_MILES
+                )
+                wrong_marker = np.abs(before + from_start * EARTH_RADIUS_MILES - markers[k])
+                assert np.maximum(off_the_leg, wrong_marker).min() < 1e-4

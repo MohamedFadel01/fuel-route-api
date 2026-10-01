@@ -1,0 +1,34 @@
+[project]
+name = "fuel-route-api"
+version = "0.1.0"
+description = "Django REST API that plans cost-optimal fuel stops along a US route."
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings"
+testpaths = ["tests", "apps"]
+addopts = "--import-mode=importlib --strict-markers -ra"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["**/migrations/*"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # bugbear
+    "UP",  # pyupgrade
+    "N",   # pep8-naming
+    "C4",  # comprehensions
+    "SIM", # simplify
+    "DJ",  # flake8-django
+    "PT",  # pytest style
+    "RUF", # ruff-specific
+]
+
+[tool.ruff.lint.per-file-ignores]
+"manage.py" = ["E402"]

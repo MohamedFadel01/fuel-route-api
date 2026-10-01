@@ -22,3 +22,24 @@ python manage.py migrate        # create the database tables
 python manage.py import_stations  # load data/fuel-prices-for-be-assessment.csv (safe to re-run)
 python manage.py runserver      # start the dev server
 ```
+
+## Station locations
+
+The fuel price file has no coordinates, so each station is located in two tiers:
+
+1. **Exact position** from OpenStreetMap (Nominatim), accepted only if it is in the right
+   state, near the station's city and has a name that plausibly matches the station.
+2. **City centre** from GeoNames, when no verified exact position exists.
+
+```bash
+python manage.py geocode_stations              # locate stations not yet located (resumable)
+python manage.py geocode_stations --limit 20   # try a small batch first
+python manage.py geocode_stations --city-only  # city centres only, no Nominatim (fast, offline)
+python manage.py geocode_stations --redo-city  # retry the OpenStreetMap lookup for city-centre stations
+```
+
+Nominatim allows one request per second, so a full run takes about two hours. Progress is
+saved after every station: stop it with Ctrl+C and run it again to continue. Set
+`NOMINATIM_USER_AGENT` (see `.env.example`) to identify yourself, as the Nominatim usage
+policy requires. The GeoNames files (`data/geonames/US.zip`, `CA.zip`) are downloaded on the
+first run.

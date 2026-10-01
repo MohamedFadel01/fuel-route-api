@@ -1,11 +1,17 @@
 """The app refuses to start when the routing settings make no sense."""
 
 import math
+import os
+import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 from django.core.checks import run_checks
 
 from apps.trips.providers.osrm import get_shared_client, reset_shared_client
+
+BASE_DIR = Path(__file__).resolve().parents[3]
 
 
 def routing_errors():
@@ -63,6 +69,23 @@ class TestTheRoutingSettings:
         settings.TRIP_CACHE_SECONDS = 0
 
         assert routing_errors() == []
+
+    def test_bad_settings_stop_the_app_from_starting(self):
+        # Registering a check is not enough: a server does not run checks on its own.
+        # Starting the app itself must fail.
+        env = os.environ.copy()
+        env["DJANGO_SETTINGS_MODULE"] = "config.settings"
+        env["MAX_SNAP_MILES"] = "-1"
+        result = subprocess.run(
+            [sys.executable, "-c", "import django; django.setup()"],
+            env=env,
+            cwd=BASE_DIR,
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode != 0
+        assert "MAX_SNAP_MILES" in result.stderr
 
     def test_every_problem_is_reported_together(self, settings):
         settings.OSRM_TIMEOUT_SECONDS = 0

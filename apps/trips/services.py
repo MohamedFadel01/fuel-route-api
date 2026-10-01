@@ -132,14 +132,17 @@ def plan_trip(
     """
     _check_in_area(start, "start")
     _check_in_area(finish, "finish")
+    # Read before the cache, so a broken limit fails the request instead of serving a saved
+    # trip, and so two different limits never share a saved answer.
+    limit = _snap_limit()
 
-    key = _cache_key(start, finish)
+    key = _cache_key(start, finish, limit)
     cached = _read_cache(key)
     if cached is not None:
         return cached
 
     routing = get_shared_client() if provider is None else provider
-    plan = _build(routing.route(start, finish))
+    plan = _build(routing.route(start, finish), limit)
     _write_cache(key, plan)
     return plan
 
@@ -151,8 +154,8 @@ def _check_in_area(point: Coordinates, which: str) -> None:
         )
 
 
-def _build(route: ProviderRoute) -> TripPlan:
-    _check_snap(route)
+def _build(route: ProviderRoute, limit: float) -> TripPlan:
+    _check_snap(route, limit)
     try:
         path = RoutePath.from_coordinates(route.coordinates)
     except ValueError as error:
@@ -192,12 +195,27 @@ def _build(route: ProviderRoute) -> TripPlan:
             margin_miles=margin,
             measured_miles=path.total_miles,
         )
-    assert gap is not None  # every margin failed, so the last one reported a gap
+    if gap is None:  # no margin was tried, which cannot happen with the margins above
+        raise RuntimeError("No search margin was tried.")
     raise NoTripPlanError(gap.gap_start_mile, gap.gap_end_mile, gap.range_miles, margin)
 
 
-def _check_snap(route: ProviderRoute) -> None:
+def _snap_limit() -> float:
+    """The configured limit, or ``ValueError`` when it is not a positive finite number.
+
+    The start-up check catches this too. Checking here as well means a bad value cannot
+    slip through to a comparison (``miles > nan`` is never true, so it would allow every
+    point) just because nothing ran the check.
+    """
     limit = settings.MAX_SNAP_MILES
+    if isinstance(limit, bool) or not isinstance(limit, int | float):
+        raise ValueError(f"MAX_SNAP_MILES must be a positive number of miles, not {limit!r}.")
+    if not math.isfinite(limit) or limit <= 0:
+        raise ValueError(f"MAX_SNAP_MILES must be a positive number of miles, not {limit!r}.")
+    return float(limit)
+
+
+def _check_snap(route: ProviderRoute, limit: float) -> None:
     for which, miles in (("start", route.start_snap_miles), ("finish", route.finish_snap_miles)):
         if not math.isfinite(miles) or miles < 0:
             raise RoutingServiceError(
@@ -221,9 +239,13 @@ def _load_stations() -> tuple[list[StationSite], dict[int, tuple[str, str, str]]
     return sites, details
 
 
-def _cache_key(start: Coordinates, finish: Coordinates) -> str:
-    """Points that agree to six decimals (about 10 cm, what we send the router) share a key."""
-    return f"trip:v1:{_rounded(start)}:{_rounded(finish)}"
+def _cache_key(start: Coordinates, finish: Coordinates, limit: float) -> str:
+    """Points that agree to six decimals (about 10 cm, what we send the router) share a key.
+
+    The snap limit is part of the key, so tightening it cannot keep serving a trip that was
+    saved when a longer move to the nearest road was still allowed.
+    """
+    return f"trip:v1:{limit:.6f}:{_rounded(start)}:{_rounded(finish)}"
 
 
 def _rounded(point: Coordinates) -> str:

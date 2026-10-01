@@ -315,6 +315,18 @@ class TestWhenTheRoutingServiceFails:
 
 
 class TestInput:
+    @pytest.mark.parametrize("limit", [0, -1, math.nan, math.inf, "5"])
+    def test_an_unusable_snap_limit_is_a_clear_error_and_makes_no_routing_call(
+        self, settings, limit
+    ):
+        settings.MAX_SNAP_MILES = limit
+        routing = FakeRouting(road(200)[0])
+
+        with pytest.raises(ValueError, match="MAX_SNAP_MILES"):
+            plan_trip(ORIGIN, north_of(ORIGIN, 200), provider=routing)
+
+        assert routing.calls == []
+
     def test_a_place_outside_the_area_is_refused_before_any_routing(self):
         london = Coordinates(51.5074, -0.1278)
         routing = FakeRouting(road(10)[0])
@@ -394,6 +406,32 @@ class TestCaching:
         second = plan_trip(ORIGIN, finish, provider=routing)
 
         assert second.total_cost == first.total_cost == Decimal("30.00")
+        assert len(routing.calls) == 1
+
+    def test_tightening_the_snap_limit_does_not_serve_a_trip_that_is_now_too_far(self, settings):
+        # Saved under a generous limit. The limit is then tightened: the saved answer must
+        # not skip the check, or a point 20 miles from any road would still be planned.
+        settings.MAX_SNAP_MILES = 30
+        route, finish = road(200, start_snap_miles=20)
+        routing = FakeRouting(route)
+        plan_trip(ORIGIN, finish, provider=routing)
+
+        settings.MAX_SNAP_MILES = 5
+
+        with pytest.raises(PointFarFromRoadError):
+            plan_trip(ORIGIN, finish, provider=routing)
+        assert len(routing.calls) == 2
+
+    def test_a_saved_value_that_is_not_a_trip_is_ignored(self, monkeypatch):
+        route, finish = road(200)
+        routing = FakeRouting(route)
+        monkeypatch.setattr(
+            "apps.trips.services.cache.get", lambda *args, **kwargs: {"not": "a trip"}
+        )
+
+        plan = plan_trip(ORIGIN, finish, provider=routing)
+
+        assert isinstance(plan, TripPlan)
         assert len(routing.calls) == 1
 
     def test_a_cache_time_of_zero_asks_the_routing_service_every_time(self, settings):

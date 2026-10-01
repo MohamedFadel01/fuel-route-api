@@ -43,7 +43,7 @@ class Command(BaseCommand):
         exact = sum(1 for s in located if s.location_precision == Station.LocationPrecision.POI)
         message = (
             f"{plural(count, 'station location')} written to {path} "
-            f"({exact} exact, {count - exact} city centre)."
+            f"({exact} exact, {count - exact} approximate)."
         )
         missing = len(stations) - len(located)
         if missing:

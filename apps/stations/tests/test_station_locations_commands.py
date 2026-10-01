@@ -53,7 +53,7 @@ class TestExportStationLocations:
 
         assert "3 station locations written" in out
         assert "1 exact" in out
-        assert "2 city centre" in out
+        assert "2 approximate" in out
         assert "1 station not located yet" in out
         assert err == ""
 

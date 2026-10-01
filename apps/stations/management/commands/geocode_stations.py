@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
+from apps.stations.geocoding.ambiguity import demote_shared_locations
 from apps.stations.geocoding.gazetteer import GazetteerError
 from apps.stations.geocoding.geonames import load_gazetteer
 from apps.stations.geocoding.nominatim import NominatimClient
@@ -99,12 +100,14 @@ class Command(BaseCommand):
             )
         except TooManyFailuresError as error:
             self.report(error.summary)
+            self.relabel_shared_positions()
             raise CommandError(
                 f"Stopped after {options['max_failures']} consecutive failures. "
                 "Check your connection and run the command again to continue."
             ) from error
 
         self.report(summary)
+        self.relabel_shared_positions()
         if summary.interrupted:
             self.stdout.write(
                 self.style.WARNING(
@@ -137,6 +140,15 @@ class Command(BaseCommand):
     def report_failure(self, station: Station, error: Exception) -> None:
         where = f"{station.city}, {station.state}"
         self.stderr.write(f"Could not search for {station.name} ({where}): {error}")
+
+    def relabel_shared_positions(self) -> None:
+        """One place on the map cannot belong to several stations, so none is "exact"."""
+        demoted = demote_shared_locations()
+        if demoted:
+            self.stdout.write(
+                f"Relabelled as approximate: {demoted} (exact position shared with "
+                "another station)."
+            )
 
     def report(self, summary: RunSummary) -> None:
         self.stdout.write(

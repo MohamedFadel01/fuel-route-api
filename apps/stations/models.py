@@ -8,8 +8,8 @@ class Station(models.Model):
     class LocationPrecision(models.TextChoices):
         """How trustworthy the stored coordinates are."""
 
-        POI = "poi", "Exact place found by name"
-        CITY = "city", "Centre of the station's city"
+        POI = "poi", "Exact place found by name, used by this station alone"
+        CITY = "city", "Approximate: somewhere in the station's city"
 
     opis_id = models.PositiveIntegerField(unique=True, help_text="OPIS truckstop ID.")
     name = models.CharField(max_length=200)

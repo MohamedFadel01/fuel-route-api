@@ -1,3 +1,4 @@
+import json
 from io import StringIO
 
 import pytest
@@ -112,7 +113,99 @@ class TestGeocoding:
         run()
 
         assert len(responses.calls) == 1
-        assert Station.objects.filter(location_precision="poi").count() == 2
+        # Both stations got the one place that was found, so neither is "exact".
+        assert Station.objects.filter(location_precision="city").count() == 2
+
+
+class TestSharedPositions:
+    @responses.activate
+    def test_stations_given_the_same_place_are_labelled_approximate(self, make_station):
+        first = make_station(name="PILOT TRAVEL CENTER #1", opis_id=1, city="Austin", state="TX")
+        second = make_station(name="PILOT TRAVEL CENTER #2", opis_id=2, city="Austin", state="TX")
+        add_search(hit(lat=30.30, lon=-97.70))
+
+        out, _ = run()
+
+        for station in (first, second):
+            station = reload(station)
+            assert (station.latitude, station.longitude) == (30.30, -97.70)
+            assert station.location_precision == "city"
+        assert "Relabelled as approximate: 2" in out
+
+    @responses.activate
+    def test_stations_with_their_own_place_stay_exact(self, make_station):
+        pilot = make_station(name="PILOT TRAVEL CENTER #1", opis_id=1, city="Austin", state="TX")
+        loves = make_station(name="LOVES TRAVEL STOP #2", opis_id=2, city="Austin", state="TX")
+
+        def answer(request):
+            if "pilot" in request.params["q"].lower():
+                found = hit(name="Pilot Travel Center", lat=30.30, lon=-97.70)
+            else:
+                found = hit(name="Love's Travel Stop", lat=30.40, lon=-97.80)
+            return (200, {}, json.dumps([found]))
+
+        responses.add_callback(responses.GET, DEFAULT_BASE_URL, callback=answer)
+
+        out, _ = run()
+
+        assert reload(pilot).location_precision == "poi"
+        assert reload(loves).location_precision == "poi"
+        assert "Relabelled" not in out
+
+    @responses.activate
+    def test_a_station_found_in_an_earlier_run_is_included(self, make_station):
+        earlier = make_station(
+            name="PILOT TRAVEL CENTER #1",
+            opis_id=1,
+            city="Austin",
+            state="TX",
+            latitude=30.30,
+            longitude=-97.70,
+            location_precision="poi",
+        )
+        later = make_station(name="PILOT TRAVEL CENTER #2", opis_id=2, city="Austin", state="TX")
+        add_search(hit(lat=30.30, lon=-97.70))
+
+        run()
+
+        assert reload(earlier).location_precision == "city"
+        assert reload(later).location_precision == "city"
+
+    @responses.activate
+    def test_stations_are_relabelled_even_when_the_run_aborts(self, make_station):
+        for opis_id in (1, 2):
+            make_station(
+                opis_id=opis_id,
+                city="Austin",
+                state="TX",
+                latitude=30.30,
+                longitude=-97.70,
+                location_precision="poi",
+            )
+        for i in range(5):
+            make_station(name=f"PILOT {i}", opis_id=i + 10, city="Austin", state="TX")
+        responses.add(responses.GET, DEFAULT_BASE_URL, json={}, status=403)
+
+        with pytest.raises(CommandError, match="consecutive"):
+            run("--max-failures", "2")
+
+        assert Station.objects.filter(location_precision="poi").count() == 0
+
+    @responses.activate
+    def test_city_only_mode_also_relabels(self, make_station):
+        for opis_id in (1, 2):
+            make_station(
+                opis_id=opis_id,
+                city="Austin",
+                state="TX",
+                latitude=30.30,
+                longitude=-97.70,
+                location_precision="poi",
+            )
+
+        run("--city-only")
+
+        assert Station.objects.filter(location_precision="poi").count() == 0
 
 
 class TestWhichStationsAreProcessed:

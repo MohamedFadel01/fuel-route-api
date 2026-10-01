@@ -1,6 +1,7 @@
 """Geometry helpers shared by the trip tests."""
 
 import math
+import random
 
 from apps.common.geo import EARTH_RADIUS_MILES, Coordinates, haversine_miles
 
@@ -37,14 +38,54 @@ def _bearing(origin: Coordinates, target: Coordinates) -> float:
     )
 
 
-def along_track_miles(start: Coordinates, end: Coordinates, point: Coordinates) -> float:
-    """How far along the great circle from ``start`` to ``end`` the point's nearest spot is.
+def _cross_and_along(start: Coordinates, end: Coordinates, point: Coordinates):
+    """Textbook spherical formulas: how far off the start-to-end great circle, and how far along.
 
-    Uses the textbook spherical cross-track / along-track formulas, which share no code with
-    the production KD-tree, so it can check it.
+    They share no code with the production KD-tree, so they can check it. The along-track
+    distance is signed: negative for a point behind the start.
     """
     angle_to_point = haversine_miles(start, point) / EARTH_RADIUS_MILES
-    cross_track = math.asin(
-        math.sin(angle_to_point) * math.sin(_bearing(start, point) - _bearing(start, end))
+    turn = _bearing(start, point) - _bearing(start, end)
+    cross = math.asin(math.sin(angle_to_point) * math.sin(turn))
+    along = math.acos(min(1.0, math.cos(angle_to_point) / math.cos(cross)))
+    return abs(cross) * EARTH_RADIUS_MILES, math.copysign(
+        along, math.cos(turn)
+    ) * EARTH_RADIUS_MILES
+
+
+def along_track_miles(start: Coordinates, end: Coordinates, point: Coordinates) -> float:
+    """Miles from ``start`` to the spot on the start-to-end great circle nearest to ``point``.
+
+    Negative if that spot is behind the start; more than the route length if it is past the end.
+    """
+    return _cross_and_along(start, end, point)[1]
+
+
+def cross_track_miles(start: Coordinates, end: Coordinates, point: Coordinates) -> float:
+    """Miles from ``point`` to the start-to-end great circle (always zero or more)."""
+    return _cross_and_along(start, end, point)[0]
+
+
+def random_route(generator: random.Random) -> list[Coordinates]:
+    """A messy route: repeated vertices, U-turns, short and long legs, odd places on Earth.
+
+    The start may be in the continental US, anywhere else, on the equator, near the pole or
+    beside the date line.
+    """
+    start = Coordinates(
+        generator.choice([generator.uniform(25, 49), generator.uniform(-60, 80), 0.0, 88.0]),
+        generator.choice([generator.uniform(-125, -67), 179.9, -179.9, 0.0]),
     )
-    return math.acos(math.cos(angle_to_point) / math.cos(cross_track)) * EARTH_RADIUS_MILES
+    route, heading = [start], generator.uniform(0, 2 * math.pi)
+    for _ in range(generator.randint(1, 120)):
+        roll = generator.random()
+        if roll < 0.05:
+            route.append(route[-1])  # a repeated vertex
+            continue
+        if roll < 0.08:
+            heading += math.pi  # turning back
+        heading += generator.gauss(0, 0.4)
+        route.append(
+            destination(route[-1], math.degrees(heading), 10 ** generator.uniform(-3, 1.9))
+        )
+    return route

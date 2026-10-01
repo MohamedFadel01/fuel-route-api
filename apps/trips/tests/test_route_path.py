@@ -8,7 +8,7 @@ import pytest
 
 from apps.common.geo import EARTH_RADIUS_MILES, Coordinates, haversine_miles, unit_vector
 from apps.trips.domain.route_path import DEFAULT_SPACING_MILES, RoutePath
-from apps.trips.tests.geo_helpers import destination, north_of
+from apps.trips.tests.geo_helpers import north_of, random_route
 
 START = Coordinates(40.0, -100.0)
 
@@ -410,26 +410,6 @@ class TestBuildingDirectly:
 class TestRandomRoutes:
     """Messy routes (repeats, doubling back, odd places) checked against brute force."""
 
-    @staticmethod
-    def random_route(generator):
-        start = Coordinates(
-            generator.choice([generator.uniform(25, 49), generator.uniform(-60, 80), 0.0, 88.0]),
-            generator.choice([generator.uniform(-125, -67), 179.9, -179.9, 0.0]),
-        )
-        route, heading = [start], generator.uniform(0, 2 * math.pi)
-        for _ in range(generator.randint(1, 120)):
-            roll = generator.random()
-            if roll < 0.05:
-                route.append(route[-1])  # a repeated vertex
-                continue
-            if roll < 0.08:
-                heading += math.pi  # turning back
-            heading += generator.gauss(0, 0.4)
-            route.append(
-                destination(route[-1], math.degrees(heading), 10 ** generator.uniform(-3, 1.9))
-            )
-        return route
-
     def test_invariants_and_positions(self):
         generator = random.Random(2024)
 
@@ -437,7 +417,7 @@ class TestRandomRoutes:
             return 2 * np.arcsin(np.clip(np.linalg.norm(a - b, axis=-1) / 2, 0, 1))
 
         for _ in range(150):
-            route = self.random_route(generator)
+            route = random_route(generator)
             spacing = 10 ** generator.uniform(-1.3, 0.7)
             path = RoutePath.from_coordinates(route, spacing_miles=spacing)
             markers = path.mile_markers

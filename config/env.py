@@ -5,6 +5,14 @@ import os
 _TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
 
 
+def env_str(name: str, default: str = "") -> str:
+    """Return the stripped variable, or ``default`` when it is missing or blank.
+
+    Blank counts as unset because ``.env`` files often contain placeholders such as ``NAME=``.
+    """
+    return os.environ.get(name, "").strip() or default
+
+
 def env_bool(name: str, default: bool = False) -> bool:
     """Return the variable as a boolean ("1", "true", "yes", "on" are true)."""
     raw = os.environ.get(name)

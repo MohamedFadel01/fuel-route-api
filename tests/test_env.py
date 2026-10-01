@@ -1,6 +1,22 @@
 import pytest
 
-from config.env import env_bool, env_list
+from config.env import env_bool, env_list, env_str
+
+
+class TestEnvStr:
+    def test_returns_the_stripped_value(self, monkeypatch):
+        monkeypatch.setenv("NAME", "  value  ")
+        assert env_str("NAME") == "value"
+
+    @pytest.mark.parametrize("raw", ["", "   "])
+    def test_empty_values_count_as_unset(self, monkeypatch, raw):
+        monkeypatch.setenv("NAME", raw)
+        assert env_str("NAME", default="fallback") == "fallback"
+
+    def test_missing_variable_uses_default(self, monkeypatch):
+        monkeypatch.delenv("NAME", raising=False)
+        assert env_str("NAME") == ""
+        assert env_str("NAME", default="fallback") == "fallback"
 
 
 class TestEnvBool:

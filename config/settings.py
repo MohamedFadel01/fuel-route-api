@@ -5,19 +5,18 @@ Everything environment-specific is read from environment variables
 (see ``.env.example``), so the same code runs locally, in CI and in Docker.
 """
 
-import os
 from pathlib import Path
 
 from django.core.management.utils import get_random_secret_key
 
-from config.env import env_bool, env_list
+from config.env import env_bool, env_list, env_str
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # --- Security ---------------------------------------------------------------
 # Without DJANGO_SECRET_KEY a random key is generated for this process only.
 # That is safe by default (nothing here relies on long-lived signed data).
-SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY") or get_random_secret_key()
+SECRET_KEY = env_str("DJANGO_SECRET_KEY") or get_random_secret_key()
 DEBUG = env_bool("DJANGO_DEBUG", default=False)
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
 
@@ -41,7 +40,7 @@ WSGI_APPLICATION = "config.wsgi.application"
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
-        "NAME": os.environ.get("DATABASE_PATH", BASE_DIR / "db.sqlite3"),
+        "NAME": env_str("DATABASE_PATH", default=str(BASE_DIR / "db.sqlite3")),
     }
 }
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"

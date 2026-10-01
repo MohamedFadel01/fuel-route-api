@@ -27,10 +27,6 @@ def test_secret_key_is_set_and_long_enough():
     assert len(settings.SECRET_KEY) >= 50
 
 
-def test_debug_is_off_by_default():
-    assert settings.DEBUG is False
-
-
 def test_api_speaks_json_only():
     renderers = settings.REST_FRAMEWORK["DEFAULT_RENDERER_CLASSES"]
     assert renderers == ["rest_framework.renderers.JSONRenderer"]

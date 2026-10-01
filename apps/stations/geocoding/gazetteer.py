@@ -8,7 +8,8 @@ import io
 import re
 import unicodedata
 import zipfile
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -139,7 +140,8 @@ class CityGazetteer:
         """Build a gazetteer from GeoNames ``<country>.zip`` files, e.g. ``{"US": path}``."""
         gazetteer = cls()
         for country, path in zips.items():
-            gazetteer.add_geonames(country, _read_member(path, f"{country}.txt"))
+            with _open_member(path, f"{country}.txt") as lines:
+                gazetteer.add_geonames(country, lines)
         return gazetteer
 
     @staticmethod
@@ -167,15 +169,22 @@ class CityGazetteer:
             index[(key, state)] = place
 
 
-def _read_member(path: Path, member: str) -> list[str]:
-    """Return the lines of ``member`` inside the zip at ``path``."""
+@contextmanager
+def _open_member(path: Path, member: str) -> Iterator[Iterable[str]]:
+    """Yield the lines of ``member`` inside the zip at ``path``, one at a time.
+
+    The US file expands to hundreds of MB, so it is streamed, never loaded whole.
+    Only ``\\n``, ``\\r`` and ``\\r\\n`` end a line (unlike ``str.splitlines``).
+    """
     if not path.exists():
         raise GazetteerError(f"GeoNames file not found: {path}")
     try:
-        with zipfile.ZipFile(path) as archive, archive.open(member) as raw:
-            text = io.TextIOWrapper(raw, encoding="utf-8", errors="replace")
-            return text.read().splitlines()
+        with zipfile.ZipFile(path) as archive:
+            try:
+                raw = archive.open(member)
+            except KeyError:
+                raise GazetteerError(f"{path} does not contain {member}") from None
+            with io.TextIOWrapper(raw, encoding="utf-8", errors="replace") as text:
+                yield text
     except zipfile.BadZipFile:
         raise GazetteerError(f"{path} is not a valid zip file") from None
-    except KeyError:
-        raise GazetteerError(f"{path} does not contain {member}") from None

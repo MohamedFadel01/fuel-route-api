@@ -1,3 +1,4 @@
+import tracemalloc
 import zipfile
 
 import pytest
@@ -335,6 +336,47 @@ class TestFromGeoNamesZips:
         gazetteer = CityGazetteer.from_geonames_zips({"CA": path})
 
         assert gazetteer.lookup("Montréal", "QC") == Coordinates(45.5, -73.6)
+
+    def test_streams_the_file_instead_of_loading_it_into_memory(self, tmp_path):
+        # About 20 MB of text that contains no populated place, so nothing is kept:
+        # any real memory use would come from reading the file whole.
+        filler = geonames_line("Some Lake", 1.0, 1.0, "TX", feature_class="H")
+        path = self.write_zip(tmp_path / "US.zip", "US.txt", *[filler] * 150_000)
+
+        tracemalloc.start()
+        try:
+            CityGazetteer.from_geonames_zips({"US": path})
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+
+        assert peak < 3_000_000
+
+    @pytest.mark.parametrize("separator", ["\x0b", "\x0c", "\x1c", "\x85", "\u2028"])
+    def test_unusual_line_separators_inside_a_field_do_not_split_a_record(
+        self, tmp_path, separator
+    ):
+        line = geonames_line("Austin", 30.0, -97.0, "TX", alternates=f"Aus{separator}tin City")
+        path = self.write_zip(tmp_path / "US.zip", "US.txt", line)
+
+        gazetteer = CityGazetteer.from_geonames_zips({"US": path})
+
+        assert len(gazetteer) == 1
+        assert gazetteer.lookup("Austin", "TX") == Coordinates(30.0, -97.0)
+
+    def test_windows_line_endings_are_handled(self, tmp_path):
+        path = tmp_path / "US.zip"
+        with zipfile.ZipFile(path, "w") as archive:
+            lines = [
+                geonames_line("Austin", 30.0, -97.0, "TX"),
+                geonames_line("Dallas", 1.0, 2.0, "TX"),
+            ]
+            archive.writestr("US.txt", "\r\n".join(lines) + "\r\n")
+
+        gazetteer = CityGazetteer.from_geonames_zips({"US": path})
+
+        assert len(gazetteer) == 2
+        assert gazetteer.lookup("Dallas", "TX") == Coordinates(1.0, 2.0)
 
     def test_missing_zip_is_a_clear_error(self, tmp_path):
         with pytest.raises(GazetteerError, match=r"US\.zip"):

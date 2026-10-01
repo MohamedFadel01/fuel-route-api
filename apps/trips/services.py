@@ -83,12 +83,14 @@ class NoTripPlanError(Exception):
 
 @dataclass(frozen=True, slots=True)
 class PlannedStop:
-    """One fuel stop, with the station's name as it was when the trip was planned."""
+    """One fuel stop, with the station's name and place as they were when the trip was planned."""
 
     station_id: int
     name: str
     city: str
     state: str
+    latitude: float
+    longitude: float
     mile_marker: float
     price_per_gallon: Decimal
     gallons: Decimal
@@ -194,9 +196,11 @@ def _build(route: ProviderRoute, limit: float) -> TripPlan:
         stops = tuple(
             PlannedStop(
                 station_id=stop.station_id,
-                name=details[stop.station_id][0],
-                city=details[stop.station_id][1],
-                state=details[stop.station_id][2],
+                name=details[stop.station_id].name,
+                city=details[stop.station_id].city,
+                state=details[stop.station_id].state,
+                latitude=details[stop.station_id].latitude,
+                longitude=details[stop.station_id].longitude,
                 mile_marker=stop.mile_marker,
                 price_per_gallon=stop.price,
                 gallons=stop.gallons,
@@ -256,16 +260,25 @@ def _check_snap(route: ProviderRoute, limit: float) -> None:
             raise PointFarFromRoadError(which, miles, limit)
 
 
-def _load_stations() -> tuple[list[StationSite], dict[int, tuple[str, str, str]]]:
+@dataclass(frozen=True, slots=True)
+class _StationInfo:
+    name: str
+    city: str
+    state: str
+    latitude: float
+    longitude: float
+
+
+def _load_stations() -> tuple[list[StationSite], dict[int, _StationInfo]]:
     """Every located station, in one query, plus the name and place of each."""
     rows = Station.objects.exclude(latitude=None).values_list(
         "opis_id", "name", "city", "state", "price", "latitude", "longitude"
     )
     sites = []
-    details: dict[int, tuple[str, str, str]] = {}
+    details: dict[int, _StationInfo] = {}
     for opis_id, name, city, state, price, latitude, longitude in rows:
         sites.append(StationSite(opis_id, Coordinates(latitude, longitude), price))
-        details[opis_id] = (name, city, state)
+        details[opis_id] = _StationInfo(name, city, state, latitude, longitude)
     return sites, details
 
 
@@ -275,7 +288,8 @@ def _cache_key(start: Coordinates, finish: Coordinates, limit: float) -> str:
     The snap limit is part of the key, so tightening it cannot keep serving a trip that was
     saved when a longer move to the nearest road was still allowed.
     """
-    return f"trip:v1:{limit:.6f}:{_rounded(start)}:{_rounded(finish)}"
+    # v2 stores each stop's coordinates. A plan saved before that has nowhere to put a pin.
+    return f"trip:v2:{limit:.6f}:{_rounded(start)}:{_rounded(finish)}"
 
 
 def _rounded(point: Coordinates) -> str:

@@ -100,6 +100,8 @@ class TestATripThatCanBePlanned:
         # (600 miles minus the free 500) and the other 990 gallons are not.
         assert plan.gallons_consumed == Decimal("60.000")
         assert plan.gallons_purchased == Decimal("10.000")
+        assert plan.stops[0].latitude == station.latitude
+        assert plan.stops[0].longitude == station.longitude
         assert plan.stops[0].gallons == Decimal("10.000")
         assert plan.stops[0].price_per_gallon == Decimal("3.000")
         assert plan.stops[0].cost == Decimal("30.00")

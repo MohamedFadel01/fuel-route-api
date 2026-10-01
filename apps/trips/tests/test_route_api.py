@@ -60,9 +60,8 @@ class TestAPlannedTrip:
         self, client, fake_router, make_station
     ):
         route, finish = road(600, distance_miles=9999, duration_seconds=40000)
-        station = station_at(
-            make_station, north_of(ORIGIN, 300), name="MIDWAY FUEL", city="Nowhere", state="KS"
-        )
+        point = north_of(ORIGIN, 300)
+        station = station_at(make_station, point, name="MIDWAY FUEL", city="Nowhere", state="KS")
         routing = fake_router(route)
 
         response = client.post(URL, places(ORIGIN, finish), format="json")
@@ -90,6 +89,9 @@ class TestAPlannedTrip:
                     "name": "MIDWAY FUEL",
                     "city": "Nowhere",
                     "state": "KS",
+                    # Where the station is, so a map can drop a pin on it.
+                    "lat": float(format(point.latitude, ".6f")),
+                    "lon": float(format(point.longitude, ".6f")),
                 },
                 "mile_marker": pytest.approx(300, abs=0.5),
                 "price_per_gallon": "3.00",
@@ -169,6 +171,8 @@ class TestAPlannedTrip:
         assert _fraction_digits(body["route"]["measured_miles"]) <= 3
         assert _fraction_digits(body["route"]["duration_seconds"]) <= 1
         assert _fraction_digits(body["fuel_stops"][0]["mile_marker"]) <= 3
+        assert _fraction_digits(body["fuel_stops"][0]["station"]["lat"]) <= 6
+        assert _fraction_digits(body["fuel_stops"][0]["station"]["lon"]) <= 6
         for longitude, latitude in body["route"]["geometry"]["coordinates"]:
             assert _fraction_digits(longitude) <= 6
             assert _fraction_digits(latitude) <= 6

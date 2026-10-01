@@ -31,3 +31,6 @@ jobs:
 
       - name: Run tests
         run: pytest
+
+      - name: Check the map page logic
+        run: node --test apps/trips/tests/test_map.mjs

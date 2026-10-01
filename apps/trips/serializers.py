@@ -68,6 +68,14 @@ class _StationSerializer(serializers.Serializer):
     name = serializers.CharField()
     city = serializers.CharField()
     state = serializers.CharField()
+    lat = serializers.SerializerMethodField()
+    lon = serializers.SerializerMethodField()
+
+    def get_lat(self, stop: PlannedStop) -> float:
+        return _json_float(stop.latitude, 6)
+
+    def get_lon(self, stop: PlannedStop) -> float:
+        return _json_float(stop.longitude, 6)
 
 
 def _json_float(value: float, places: int) -> float:

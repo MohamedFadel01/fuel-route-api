@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fuel route</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+  <style>{{ map_style|safe }}</style>
+</head>
+<body>
+  <div id="map" role="application" aria-label="Map. Click to set the start and the finish."></div>
+  <section class="panel">
+    <h1>Fuel route</h1>
+    <p id="instructions"></p>
+    <div id="result" hidden>
+      <p id="summary"></p>
+      <p id="note"></p>
+      <ol id="stops"></ol>
+    </div>
+    <p id="status" role="status"></p>
+    <button type="button" id="reset">Start over</button>
+  </section>
+  <noscript>This page needs JavaScript to show the map.</noscript>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script type="module">
+{{ map_script|safe }}
+  </script>
+</body>
+</html>

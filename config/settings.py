@@ -60,9 +60,18 @@ TIME_ZONE = "UTC"
 USE_I18N = False
 USE_TZ = True
 
-# --- Static files -----------------------------------------------------------
+# --- Static files and templates ---------------------------------------------
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+# The map page is a template. There is no auth app, so no auth context processors.
+TEMPLATES = [
+    {
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [],
+        "APP_DIRS": True,
+        "OPTIONS": {"context_processors": []},
+    }
+]
 
 # --- Fuel data --------------------------------------------------------------
 FUEL_PRICES_CSV = BASE_DIR / "data" / "fuel-prices-for-be-assessment.csv"

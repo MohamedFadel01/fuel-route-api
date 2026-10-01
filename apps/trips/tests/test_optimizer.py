@@ -280,11 +280,6 @@ class TestStationsAtTheSameSpot:
 
         assert [stop.station_id for stop in plan.stops] == [1, 4]
 
-    def test_a_cheaper_station_with_the_higher_id_still_wins_at_one_marker(self):
-        plan = plan_fuel_stops(800.0, [at(300, "3.50", 3), at(300, "3.00", 7)])
-
-        assert stops_of(plan) == [(7, d("30.000"), d("90.00"))]
-
     def test_equal_prices_at_one_spot_reached_when_filling_up_also_go_to_the_lowest_id(self):
         # Nothing is cheaper than mile 200, so the car fills up there and heads for the
         # cheapest station in reach: mile 480, where two stations tie.

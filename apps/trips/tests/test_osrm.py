@@ -50,7 +50,10 @@ GOOD_ROUTE = {
 GOOD_ANSWER = {
     "code": "Ok",
     "routes": [GOOD_ROUTE],
-    "waypoints": [{"name": "Congress Avenue", "location": [-97.74313, 30.267208]}],
+    "waypoints": [
+        {"name": "Congress Avenue", "location": [-97.74313, 30.267208], "distance": 3.019739392},
+        {"name": "Main Street", "location": [-96.797, 32.7767], "distance": 1609.344},
+    ],
 }
 
 
@@ -67,7 +70,12 @@ def with_route(**changes):
     """The good answer with some fields of its first route changed."""
     route = copy.deepcopy(GOOD_ROUTE)
     route.update(changes)
-    return {"code": "Ok", "routes": [route]}
+    return {**copy.deepcopy(GOOD_ANSWER), "routes": [route]}
+
+
+def with_waypoints(waypoints):
+    """The good answer with different waypoints."""
+    return {**copy.deepcopy(GOOD_ANSWER), "waypoints": waypoints}
 
 
 class TestTheRequest:
@@ -138,6 +146,16 @@ class TestTheRequest:
         assert len(responses.calls) == 1
 
     @responses.activate
+    @pytest.mark.parametrize("base", ["http://proxy.local/osrm", "http://proxy.local/osrm/"])
+    def test_a_server_living_under_a_path_prefix_keeps_the_prefix(self, base):
+        url = "http://proxy.local/osrm/route/v1/driving/-97.743100,30.267200;-96.797000,32.776700"
+        answer(url=url)
+
+        OsrmClient(base_url=base, user_agent=USER_AGENT).route(AUSTIN, DALLAS)
+
+        assert responses.calls[0].request.url.startswith(url)
+
+    @responses.activate
     def test_coordinates_are_sent_to_six_decimals_whatever_their_size(self, client):
         url = f"{DEFAULT_BASE_URL}/route/v1/driving/0.000001,-0.000000;-179.999999,89.500000"
         answer(url=url)
@@ -174,6 +192,53 @@ class TestAGoodAnswer:
             Coordinates(30.267611, -97.742979),
         )
 
+    @responses.activate
+    def test_it_reports_how_far_each_place_was_from_the_road_it_was_moved_to(self, client):
+        # OSRM moves every point onto the nearest road and says by how many metres.
+        answer()
+
+        route = client.route(AUSTIN, DALLAS)
+
+        assert route.start_snap_miles == pytest.approx(3.019739392 / 1609.344)
+        assert route.finish_snap_miles == pytest.approx(1.0)
+
+    @responses.activate
+    def test_a_place_that_was_far_from_any_road_is_visible_in_the_result(self, client):
+        # Real example: a point in the Gulf of Mexico was moved 100.5 miles onto a beach road.
+        waypoints = [
+            {"name": "Gulf Beach Drive", "location": [-94.9, 29.4], "distance": 161_760.0},
+            {"name": "Bagby Street", "location": [-95.36, 29.76], "distance": 0.0},
+        ]
+        answer(with_waypoints(waypoints))
+
+        route = client.route(AUSTIN, DALLAS)
+
+        assert route.start_snap_miles == pytest.approx(100.5, abs=0.05)
+        assert route.finish_snap_miles == 0.0
+
+    @responses.activate
+    def test_more_than_two_waypoints_use_the_first_and_the_last(self, client):
+        waypoints = [
+            {"distance": 1609.344},
+            {"distance": 99_999.0},
+            {"distance": 3218.688},
+        ]
+        answer(with_waypoints(waypoints))
+
+        route = client.route(AUSTIN, DALLAS)
+
+        assert (route.start_snap_miles, route.finish_snap_miles) == (
+            pytest.approx(1.0),
+            pytest.approx(2.0),
+        )
+
+    def test_a_route_built_by_hand_is_assumed_to_start_and_end_on_a_road(self):
+        route = ProviderRoute(
+            coordinates=(AUSTIN, DALLAS), distance_miles=1.0, duration_seconds=2.0
+        )
+
+        assert (route.start_snap_miles, route.finish_snap_miles) == (0.0, 0.0)
+
     def test_a_mile_is_1609_point_344_meters(self):
         assert METERS_PER_MILE == 1609.344
 
@@ -197,7 +262,7 @@ class TestAGoodAnswer:
     def test_only_the_first_route_is_used_when_there_are_several(self, client):
         second = copy.deepcopy(GOOD_ROUTE)
         second["distance"] = 1.0
-        answer({"code": "Ok", "routes": [GOOD_ROUTE, second]})
+        answer({**GOOD_ANSWER, "routes": [GOOD_ROUTE, second]})
 
         assert client.route(AUSTIN, DALLAS).distance_miles == pytest.approx(313948.1 / 1609.344)
 
@@ -471,7 +536,7 @@ class TestAnAnswerThatMakesNoSense:
     def test_a_missing_distance(self, client):
         route = copy.deepcopy(GOOD_ROUTE)
         del route["distance"]
-        answer({"code": "Ok", "routes": [route]})
+        answer({**GOOD_ANSWER, "routes": [route]})
 
         with pytest.raises(RoutingServiceError, match="distance"):
             client.route(AUSTIN, DALLAS)
@@ -488,7 +553,7 @@ class TestAnAnswerThatMakesNoSense:
     def test_a_missing_duration(self, client):
         route = copy.deepcopy(GOOD_ROUTE)
         del route["duration"]
-        answer({"code": "Ok", "routes": [route]})
+        answer({**GOOD_ANSWER, "routes": [route]})
 
         with pytest.raises(RoutingServiceError, match="duration"):
             client.route(AUSTIN, DALLAS)
@@ -563,6 +628,61 @@ class TestAnAnswerThatMakesNoSense:
 
         assert len(route.coordinates) == 40_000
         assert route.coordinates[-1] == Coordinates(30.0 + 39_999e-3, -97.0 - 39_999e-3)
+
+
+class TestWaypoints:
+    @responses.activate
+    @pytest.mark.parametrize(
+        "waypoints",
+        [
+            None,
+            "x",
+            {},
+            [],
+            [{"distance": 1.0}],  # one place is not a trip
+            [None, None],
+            ["a", "b"],
+            [{"distance": 1.0}, None],
+            [{"name": "no distance"}, {"distance": 1.0}],
+            [{"distance": 1.0}, {"name": "no distance"}],
+        ],
+    )
+    def test_missing_or_unusable_waypoints(self, client, waypoints):
+        answer(with_waypoints(waypoints))
+
+        with pytest.raises(RoutingServiceError, match="waypoint"):
+            client.route(AUSTIN, DALLAS)
+
+    @responses.activate
+    def test_an_answer_without_waypoints_at_all(self, client):
+        body = copy.deepcopy(GOOD_ANSWER)
+        del body["waypoints"]
+        answer(body)
+
+        with pytest.raises(RoutingServiceError, match="waypoint"):
+            client.route(AUSTIN, DALLAS)
+
+    @responses.activate
+    @pytest.mark.parametrize(
+        "distance", [None, "3.0", -1.0, math.inf, True, False, [1.0], {"m": 1.0}]
+    )
+    @pytest.mark.parametrize("which", [0, 1])
+    def test_a_snap_distance_that_is_not_a_sensible_number(self, client, distance, which):
+        waypoints = copy.deepcopy(GOOD_ANSWER["waypoints"])
+        waypoints[which]["distance"] = distance
+        answer(with_waypoints(waypoints))
+
+        with pytest.raises(RoutingServiceError, match="waypoint"):
+            client.route(AUSTIN, DALLAS)
+
+    @responses.activate
+    def test_integer_distances_are_accepted(self, client):
+        answer(with_waypoints([{"distance": 0}, {"distance": 5}]))
+
+        route = client.route(AUSTIN, DALLAS)
+
+        assert route.start_snap_miles == 0.0
+        assert route.finish_snap_miles == pytest.approx(5 / 1609.344)
 
 
 class TestTheErrors:

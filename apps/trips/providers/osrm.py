@@ -52,6 +52,17 @@ _QUERY = {
 
 
 class OsrmClient:
+    """Asks an OSRM server for driving routes.
+
+    Create one client and share it: it keeps its connection to the server open between
+    requests, which saves a new TLS handshake (a few hundred milliseconds) every time.
+
+    ``timeout`` is the longest the client waits at each step: to connect, for the answer to
+    start, and for each further piece of it. A healthy server answers well inside it. A
+    server that keeps sending a trickle of data can hold a request longer, which is why the
+    web server that runs this app should have its own time limit per request.
+    """
+
     def __init__(
         self,
         *,
@@ -141,10 +152,28 @@ def _parse_route(body: dict[str, Any]) -> ProviderRoute:
     if not isinstance(routes, list) or not routes or not isinstance(routes[0], dict):
         raise RoutingServiceError("The routing service answered without a route.")
     route = routes[0]
+    start_snap, finish_snap = _parse_snap_distances(body.get("waypoints"))
     return ProviderRoute(
         coordinates=_parse_geometry(route.get("geometry")),
         distance_miles=_number(route.get("distance"), "distance") / METERS_PER_MILE,
         duration_seconds=_number(route.get("duration"), "duration"),
+        start_snap_miles=start_snap / METERS_PER_MILE,
+        finish_snap_miles=finish_snap / METERS_PER_MILE,
+    )
+
+
+def _parse_snap_distances(waypoints: object) -> tuple[float, float]:
+    """Metres each end of the trip was moved to reach a road (first and last waypoint)."""
+    if (
+        not isinstance(waypoints, list)
+        or len(waypoints) < 2
+        or not all(isinstance(waypoint, dict) for waypoint in waypoints)
+    ):
+        raise RoutingServiceError("The routing service answered without usable waypoints.")
+    first, last = waypoints[0], waypoints[-1]
+    return (
+        _number(first.get("distance"), "waypoint distance"),
+        _number(last.get("distance"), "waypoint distance"),
     )
 
 

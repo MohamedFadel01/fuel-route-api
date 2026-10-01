@@ -33,11 +33,19 @@ class ProviderRoute:
 
     ``distance_miles`` and ``duration_seconds`` are what the service reports. The trip logic
     measures the points itself for its mile markers, and the two agree to within about 0.2%.
+
+    Routing services put each place on the nearest road, however far away that is: a point
+    in the sea can be moved a hundred miles. ``start_snap_miles`` and ``finish_snap_miles``
+    say how far each place was moved, so the caller can refuse a trip that does not really
+    start or end where the user asked. They default to 0 (on the road), which is what a
+    hand-made route in a test usually means.
     """
 
     coordinates: tuple[Coordinates, ...]
     distance_miles: float
     duration_seconds: float
+    start_snap_miles: float = 0.0
+    finish_snap_miles: float = 0.0
 
 
 class RoutingProvider(Protocol):

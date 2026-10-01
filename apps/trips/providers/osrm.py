@@ -142,6 +142,27 @@ class OsrmClient:
         return _parse_route(body)
 
 
+_shared: OsrmClient | None = None
+
+
+def get_shared_client() -> OsrmClient:
+    """The one client for this process, built on first use and reused after that.
+
+    Reusing it keeps the connection to the server open, which saves a new handshake on
+    every trip.
+    """
+    global _shared
+    if _shared is None:
+        _shared = OsrmClient.from_settings()
+    return _shared
+
+
+def reset_shared_client() -> None:
+    """Forget the shared client, so the next one is built from the current settings."""
+    global _shared
+    _shared = None
+
+
 def _place(place: Coordinates) -> str:
     """``longitude,latitude``: OSRM wants them this way round, to six decimals (about 10 cm)."""
     return f"{place.longitude:.6f},{place.latitude:.6f}"

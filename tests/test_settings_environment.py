@@ -21,6 +21,8 @@ MANAGED_VARIABLES = (
     "OSRM_BASE_URL",
     "OSRM_TIMEOUT_SECONDS",
     "OSRM_USER_AGENT",
+    "MAX_SNAP_MILES",
+    "TRIP_CACHE_SECONDS",
 )
 PROBE = """
 import json
@@ -33,6 +35,8 @@ print(json.dumps({
     "osrm_base_url": settings.OSRM_BASE_URL,
     "osrm_timeout": settings.OSRM_TIMEOUT_SECONDS,
     "osrm_user_agent": settings.OSRM_USER_AGENT,
+    "max_snap_miles": settings.MAX_SNAP_MILES,
+    "trip_cache_seconds": settings.TRIP_CACHE_SECONDS,
 }))
 """
 
@@ -154,3 +158,24 @@ class TestRoutingService:
 
         assert result.returncode != 0
         assert "OSRM_TIMEOUT_SECONDS" in result.stderr
+
+
+class TestTripPlanningSettings:
+    def test_defaults(self, load_settings):
+        loaded = load_settings()
+
+        assert loaded["max_snap_miles"] == 5.0
+        assert loaded["trip_cache_seconds"] == 3600
+
+    def test_can_be_configured(self, load_settings):
+        loaded = load_settings(MAX_SNAP_MILES="12.5", TRIP_CACHE_SECONDS="0")
+
+        assert loaded["max_snap_miles"] == 12.5
+        assert loaded["trip_cache_seconds"] == 0
+
+    @pytest.mark.parametrize("empty", ["", "   "])
+    def test_blank_values_are_treated_as_unset(self, load_settings, empty):
+        loaded = load_settings(MAX_SNAP_MILES=empty, TRIP_CACHE_SECONDS=empty)
+
+        assert loaded["max_snap_miles"] == 5.0
+        assert loaded["trip_cache_seconds"] == 3600

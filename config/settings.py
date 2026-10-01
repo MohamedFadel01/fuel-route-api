@@ -26,6 +26,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "rest_framework",
     "apps.stations",
+    "apps.trips",
 ]
 
 MIDDLEWARE = [
@@ -90,6 +91,11 @@ STATION_MATCH_MAX_MILES = 25.0
 OSRM_BASE_URL = env_str("OSRM_BASE_URL", default="https://router.project-osrm.org")
 OSRM_TIMEOUT_SECONDS = env_float("OSRM_TIMEOUT_SECONDS", default=10.0)
 OSRM_USER_AGENT = env_str("OSRM_USER_AGENT", default="fuel-route-api/0.1 (assessment project)")
+# A point the router had to move further than this to reach a road is refused: it is not
+# the place that was asked for. (A point 60 miles offshore was moved 100 miles in testing.)
+MAX_SNAP_MILES = env_float("MAX_SNAP_MILES", default=5.0)
+# How long an identical trip is served from memory, with no new routing call. 0 disables it.
+TRIP_CACHE_SECONDS = env_float("TRIP_CACHE_SECONDS", default=3600.0)
 
 # --- Django REST framework --------------------------------------------------
 # A public, stateless JSON API: no sessions, no auth, no browsable HTML.

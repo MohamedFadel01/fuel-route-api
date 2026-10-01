@@ -1,5 +1,6 @@
 """Tiny helpers for reading typed values from environment variables."""
 
+import math
 import os
 
 _TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
@@ -19,6 +20,24 @@ def env_bool(name: str, default: bool = False) -> bool:
     if raw is None:
         return default
     return raw.strip().lower() in _TRUE_VALUES
+
+
+def env_float(name: str, default: float) -> float:
+    """Return the variable as a finite number, or ``default`` when it is missing or blank.
+
+    A value that is not a finite number stops the app at start-up with a message naming the
+    variable, instead of failing later somewhere unrelated.
+    """
+    raw = env_str(name)
+    if not raw:
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        value = math.nan
+    if not math.isfinite(value):
+        raise ValueError(f"{name} must be a number, not {raw!r}")
+    return value
 
 
 def env_list(name: str, default: list[str] | None = None) -> list[str]:

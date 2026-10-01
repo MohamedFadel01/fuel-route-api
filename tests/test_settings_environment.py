@@ -18,6 +18,9 @@ MANAGED_VARIABLES = (
     "DJANGO_DEBUG",
     "DJANGO_ALLOWED_HOSTS",
     "DATABASE_PATH",
+    "OSRM_BASE_URL",
+    "OSRM_TIMEOUT_SECONDS",
+    "OSRM_USER_AGENT",
 )
 PROBE = """
 import json
@@ -27,6 +30,9 @@ print(json.dumps({
     "debug": settings.DEBUG,
     "allowed_hosts": settings.ALLOWED_HOSTS,
     "database": str(settings.DATABASES["default"]["NAME"]),
+    "osrm_base_url": settings.OSRM_BASE_URL,
+    "osrm_timeout": settings.OSRM_TIMEOUT_SECONDS,
+    "osrm_user_agent": settings.OSRM_USER_AGENT,
 }))
 """
 
@@ -103,3 +109,48 @@ class TestSecretKey:
 
         assert len(secret_key) >= 50
         assert secret_key.strip() == secret_key
+
+
+class TestRoutingService:
+    def test_defaults_to_the_public_osrm_server_with_a_ten_second_timeout(self, load_settings):
+        loaded = load_settings()
+
+        assert loaded["osrm_base_url"] == "https://router.project-osrm.org"
+        assert loaded["osrm_timeout"] == 10.0
+        assert "fuel-route-api" in loaded["osrm_user_agent"]
+
+    def test_can_be_pointed_at_another_server(self, load_settings):
+        loaded = load_settings(
+            OSRM_BASE_URL="http://osrm:5000",
+            OSRM_TIMEOUT_SECONDS="2.5",
+            OSRM_USER_AGENT="my-app/1.0 (me@example.com)",
+        )
+
+        assert loaded["osrm_base_url"] == "http://osrm:5000"
+        assert loaded["osrm_timeout"] == 2.5
+        assert loaded["osrm_user_agent"] == "my-app/1.0 (me@example.com)"
+
+    @pytest.mark.parametrize("empty", ["", "   "])
+    def test_blank_values_are_treated_as_unset(self, load_settings, empty):
+        loaded = load_settings(
+            OSRM_BASE_URL=empty, OSRM_TIMEOUT_SECONDS=empty, OSRM_USER_AGENT=empty
+        )
+
+        assert loaded["osrm_base_url"] == "https://router.project-osrm.org"
+        assert loaded["osrm_timeout"] == 10.0
+
+    def test_a_timeout_that_is_not_a_number_stops_the_app_with_a_clear_message(self):
+        result = subprocess.run(
+            [sys.executable, "-c", PROBE],
+            env={
+                **{k: v for k, v in os.environ.items() if k not in MANAGED_VARIABLES},
+                "DJANGO_SETTINGS_MODULE": "config.settings",
+                "OSRM_TIMEOUT_SECONDS": "soon",
+            },
+            cwd=BASE_DIR,
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode != 0
+        assert "OSRM_TIMEOUT_SECONDS" in result.stderr

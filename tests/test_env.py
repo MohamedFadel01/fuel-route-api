@@ -1,6 +1,6 @@
 import pytest
 
-from config.env import env_bool, env_list, env_str
+from config.env import env_bool, env_float, env_list, env_str
 
 
 class TestEnvStr:
@@ -58,3 +58,30 @@ class TestEnvList:
         monkeypatch.delenv("HOSTS", raising=False)
         env_list("HOSTS").append("mutated")
         assert env_list("HOSTS") == []
+
+
+class TestEnvFloat:
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [("2.5", 2.5), (" 7 ", 7.0), ("0", 0.0), ("-1.5", -1.5), ("1e2", 100.0)],
+    )
+    def test_reads_a_number(self, monkeypatch, raw, expected):
+        monkeypatch.setenv("SECONDS", raw)
+        assert env_float("SECONDS", default=10.0) == expected
+
+    @pytest.mark.parametrize("raw", ["", "   "])
+    def test_empty_values_count_as_unset(self, monkeypatch, raw):
+        monkeypatch.setenv("SECONDS", raw)
+        assert env_float("SECONDS", default=10.0) == 10.0
+
+    def test_missing_variable_uses_default(self, monkeypatch):
+        monkeypatch.delenv("SECONDS", raising=False)
+        assert env_float("SECONDS", default=10.0) == 10.0
+
+    @pytest.mark.parametrize("raw", ["abc", "1,5", "10 seconds", "nan", "inf", "-inf", "NaN"])
+    def test_something_that_is_not_a_finite_number_is_an_error_naming_the_variable(
+        self, monkeypatch, raw
+    ):
+        monkeypatch.setenv("SECONDS", raw)
+        with pytest.raises(ValueError, match="SECONDS"):
+            env_float("SECONDS", default=10.0)

@@ -9,7 +9,7 @@ from pathlib import Path
 
 from django.core.management.utils import get_random_secret_key
 
-from config.env import env_bool, env_list, env_str
+from config.env import env_bool, env_float, env_list, env_str
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -83,6 +83,13 @@ NOMINATIM_MIN_INTERVAL = 1.0  # seconds between requests
 NOMINATIM_BACKOFF_SECONDS = 5.0  # first wait when the server is busy; doubles per retry
 # A search hit further than this from the station's city is treated as a wrong match.
 STATION_MATCH_MAX_MILES = 25.0
+
+# --- Routing (OSRM) -----------------------------------------------------------
+# One request per trip. The public demo server is best-effort and meant for light use; to
+# use your own OSRM (or a compatible service) just change the base URL.
+OSRM_BASE_URL = env_str("OSRM_BASE_URL", default="https://router.project-osrm.org")
+OSRM_TIMEOUT_SECONDS = env_float("OSRM_TIMEOUT_SECONDS", default=10.0)
+OSRM_USER_AGENT = env_str("OSRM_USER_AGENT", default="fuel-route-api/0.1 (assessment project)")
 
 # --- Django REST framework --------------------------------------------------
 # A public, stateless JSON API: no sessions, no auth, no browsable HTML.

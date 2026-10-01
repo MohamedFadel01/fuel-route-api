@@ -1,3 +1,7 @@
-"""Root URL configuration. App routes are included here as the project grows."""
+"""Root URL configuration."""
 
-urlpatterns: list = []
+from django.urls import include, path
+
+urlpatterns = [
+    path("api/v1/", include("apps.trips.urls")),
+]

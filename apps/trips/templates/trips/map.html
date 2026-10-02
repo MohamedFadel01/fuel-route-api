@@ -13,7 +13,20 @@
     <h1>Fuel route</h1>
     <p id="instructions">Click the map to set the start, then click again to set the finish.</p>
     <div id="result" hidden aria-live="polite">
-      <p id="summary"></p>
+      <div class="metrics" id="summary">
+        <div class="metric">
+          <span class="metric-value" id="miles"></span>
+          <span class="metric-label">miles</span>
+        </div>
+        <div class="metric metric-cost">
+          <span class="metric-value" id="cost"></span>
+          <span class="metric-label">fuel cost</span>
+        </div>
+        <div class="metric">
+          <span class="metric-value" id="gallons"></span>
+          <span class="metric-label">gal bought</span>
+        </div>
+      </div>
       <p id="note"></p>
       <ol id="stops"></ol>
     </div>

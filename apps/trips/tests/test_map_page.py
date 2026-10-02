@@ -32,7 +32,12 @@ def test_the_page_loads(client, django_assert_num_queries):
     assert 'id="map"' in html
     assert 'id="instructions"' in html
     assert 'id="summary"' in html
+    assert 'id="miles"' in html
+    assert 'id="cost"' in html
+    assert 'id="gallons"' in html
     assert 'id="stops"' in html
+    assert "stop-facts" in html
+    assert "metric-value" in html
     assert 'id="status"' in html
     assert "Start over" in html
     # The script and the style are part of the page. Static files are not served on their

@@ -40,12 +40,18 @@ export function instructions(state, busy) {
 
 export function stopText(stop) {
   const station = stop?.station ?? {};
-  const title = [station.name, station.city, station.state].filter(Boolean).join(", ");
+  const name = station.name ?? "";
+  const place = [station.city, station.state].filter(Boolean).join(", ");
+  const title = [name, place].filter(Boolean).join(", ");
   const gallons = stop?.gallons ?? "";
-  const price = stop?.price_per_gallon ?? "";
-  const cost = stop?.cost ?? "";
-  const detail = gallons ? `${gallons} gal at $${price} · $${cost}` : "";
-  return { title, detail };
+  const price = stop?.price_per_gallon ? `$${stop.price_per_gallon}` : "";
+  const cost = stop?.cost ? `$${stop.cost}` : "";
+  const mileNumber = Number(stop?.mile_marker);
+  const mile = Number.isFinite(mileNumber)
+    ? `mile ${mileNumber.toLocaleString("en-US", { maximumFractionDigits: 0 })}`
+    : "";
+  const detail = gallons ? `${gallons} gal at ${price} · ${cost}` : "";
+  return { title, detail, name, place, mile, gallons, price, cost };
 }
 
 export function describePlan(plan) {
@@ -61,6 +67,9 @@ export function describePlan(plan) {
       : `${count} ${count === 1 ? "stop" : "stops"} · ${plan.totals.gallons_purchased} gallons bought`;
   return {
     headline: `${shown} miles · $${plan.totals.total_cost}`,
+    miles: shown,
+    cost: `$${plan.totals.total_cost}`,
+    gallons: String(plan.totals.gallons_purchased ?? ""),
     note,
     stops,
   };
@@ -143,7 +152,9 @@ function boot() {
 
   const instructionsEl = document.querySelector("#instructions");
   const statusEl = document.querySelector("#status");
-  const summaryEl = document.querySelector("#summary");
+  const milesEl = document.querySelector("#miles");
+  const costEl = document.querySelector("#cost");
+  const gallonsEl = document.querySelector("#gallons");
   const noteEl = document.querySelector("#note");
   const stopsEl = document.querySelector("#stops");
   const resultEl = document.querySelector("#result");
@@ -186,25 +197,61 @@ function boot() {
 
   function hideResult() {
     resultEl.hidden = true;
-    summaryEl.textContent = "";
+    milesEl.textContent = "";
+    costEl.textContent = "";
+    gallonsEl.textContent = "";
     noteEl.textContent = "";
     stopsEl.replaceChildren();
   }
 
+  function fact(label, value) {
+    const cell = document.createElement("div");
+    const name = document.createElement("span");
+    name.className = "fact-label";
+    name.textContent = label;
+    const amount = document.createElement("span");
+    amount.className = "fact-value";
+    amount.textContent = value;
+    cell.append(name, amount);
+    return cell;
+  }
+
   function showResult(described) {
     resultEl.hidden = false;
-    summaryEl.textContent = described.headline;
+    milesEl.textContent = described.miles;
+    costEl.textContent = described.cost;
+    gallonsEl.textContent = described.gallons;
     noteEl.textContent = described.note;
     stopsEl.replaceChildren();
-    for (const stop of described.stops) {
+    described.stops.forEach((stop, index) => {
       const item = document.createElement("li");
-      const title = document.createElement("strong");
-      title.textContent = stop.title;
-      const detail = document.createElement("div");
-      detail.textContent = stop.detail;
-      item.append(title, detail);
+      item.className = "stop";
+      const badge = document.createElement("span");
+      badge.className = "stop-index";
+      badge.setAttribute("aria-hidden", "true");
+      badge.textContent = String(index + 1);
+      const body = document.createElement("div");
+      body.className = "stop-body";
+      const name = document.createElement("div");
+      name.className = "stop-name";
+      name.textContent = stop.name || stop.title;
+      body.append(name);
+      const where = [stop.place, stop.mile].filter(Boolean).join(" · ");
+      if (where) {
+        const place = document.createElement("div");
+        place.className = "stop-place";
+        place.textContent = where;
+        body.append(place);
+      }
+      const facts = document.createElement("div");
+      facts.className = "stop-facts";
+      if (stop.gallons) facts.append(fact("Gal", stop.gallons));
+      if (stop.price) facts.append(fact("Price", stop.price));
+      if (stop.cost) facts.append(fact("Cost", stop.cost));
+      if (facts.childElementCount) body.append(facts);
+      item.append(badge, body);
       stopsEl.append(item);
-    }
+    });
   }
 
   function drawPlan(plan) {

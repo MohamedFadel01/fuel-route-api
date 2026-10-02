@@ -82,6 +82,9 @@ test("a plan with no stops says the tank covers the trip", () => {
   });
 
   assert.equal(described.headline, "195.1 miles · $0.00");
+  assert.equal(described.miles, "195.1");
+  assert.equal(described.cost, "$0.00");
+  assert.equal(described.gallons, "0.000");
   assert.match(described.note, /starting tank/i);
   assert.deepEqual(described.stops, []);
 });
@@ -92,6 +95,7 @@ test("a plan lists each stop and does not recompute the cost", () => {
     fuel_stops: [
       {
         station: { name: "Llanos Country Corner", city: "Eden", state: "TX", lat: 1, lon: 2 },
+        mile_marker: 138.983,
         gallons: "5.293",
         price_per_gallon: "2.919",
         cost: "15.45",
@@ -101,10 +105,20 @@ test("a plan lists each stop and does not recompute the cost", () => {
   });
 
   assert.equal(described.headline, "1,379.3 miles · $244.85");
+  assert.equal(described.miles, "1,379.3");
+  assert.equal(described.cost, "$244.85");
+  assert.equal(described.gallons, "80.000");
   assert.match(described.note, /1 stop/);
   assert.equal(described.stops.length, 1);
-  assert.match(described.stops[0].title, /Llanos Country Corner, Eden, TX/);
-  assert.match(described.stops[0].detail, /5\.293 gal at \$2\.919 · \$15\.45/);
+  const stop = described.stops[0];
+  assert.equal(stop.name, "Llanos Country Corner");
+  assert.equal(stop.place, "Eden, TX");
+  assert.equal(stop.mile, "mile 139");
+  assert.equal(stop.gallons, "5.293");
+  assert.equal(stop.price, "$2.919");
+  assert.equal(stop.cost, "$15.45");
+  assert.match(stop.title, /Llanos Country Corner, Eden, TX/);
+  assert.match(stop.detail, /5\.293 gal at \$2\.919 · \$15\.45/);
 });
 
 test("two stops are called stops", () => {
@@ -126,6 +140,19 @@ test("a station name is kept as text, including characters that look like html",
   });
 
   assert.equal(text.title, 'Café "Fuel" <b>, Town, TX');
+  assert.equal(text.name, 'Café "Fuel" <b>');
+  assert.equal(text.place, "Town, TX");
+});
+
+test("a stop with no mile marker leaves that line out", () => {
+  const text = stopText({
+    station: { name: "A", city: "Town", state: "TX" },
+    gallons: "1.000",
+    price_per_gallon: "3.00",
+    cost: "3.00",
+  });
+
+  assert.equal(text.mile, "");
 });
 
 test("a broken plan is not described", () => {

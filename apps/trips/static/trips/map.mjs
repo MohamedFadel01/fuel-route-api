@@ -5,6 +5,16 @@ export const NETWORK_ERROR = "Could not reach the server.";
 export const SLOW_SERVER = "The server took too long. Try again.";
 const PLAN_TIMEOUT_MS = 30_000;
 
+// A scroll notch is rounded up to a whole zoom level by default, so the map jumps.
+// Quarter steps, and more wheel travel per step, keep one scroll to a small move.
+export const MAP_OPTIONS = {
+  zoomControl: false,
+  doubleClickZoom: false,
+  zoomSnap: 0.25,
+  zoomDelta: 1,
+  wheelPxPerZoomLevel: 480,
+};
+
 const START = { radius: 8, color: "#145c38", fillColor: "#1b7f4e", fillOpacity: 1, weight: 2 };
 const FINISH = { radius: 8, color: "#6e1d1d", fillColor: "#9d2c2c", fillOpacity: 1, weight: 2 };
 const STOP = { radius: 7, color: "#8a4b08", fillColor: "#e6a23c", fillOpacity: 0.95, weight: 2 };
@@ -143,7 +153,7 @@ export async function loadPlan(start, finish, post) {
 function boot() {
   // Leaflet's own script sets a global. A module does not see that name on its own.
   const L = globalThis.L;
-  const map = L.map("map", { zoomControl: false, doubleClickZoom: false }).setView([39.8, -98.6], 4);
+  const map = L.map("map", MAP_OPTIONS).setView([39.8, -98.6], 4);
   L.control.zoom({ position: "topright" }).addTo(map);
   L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 18,

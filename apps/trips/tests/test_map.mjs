@@ -8,6 +8,7 @@ import {
   describePlan,
   fromLeaflet,
   instructions,
+  MAP_OPTIONS,
   loadPlan,
   requestBody,
   routeFetch,
@@ -17,6 +18,11 @@ import {
 
 const austin = { lat: 30.2672, lon: -97.7431 };
 const dallas = { lat: 32.7767, lon: -96.797 };
+
+test("a scroll changes the zoom by a fraction of a level", () => {
+  assert.equal(MAP_OPTIONS.zoomSnap, 0.25);
+  assert.ok(MAP_OPTIONS.wheelPxPerZoomLevel >= 480);
+});
 
 test("the first click sets the start and does not plan yet", () => {
   const next = afterClick({ start: null, finish: null }, austin);

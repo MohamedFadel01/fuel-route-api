@@ -112,8 +112,9 @@ export function describeError(body) {
 
 export function routeFetch(body, fetchImpl = globalThis.fetch, timeoutMs = PLAN_TIMEOUT_MS) {
   const controller = new AbortController();
+  // Leave the timer referenced. Unrefing it lets the test runner treat the loop as
+  // finished while this request is still waiting to be aborted.
   const timer = setTimeout(() => controller.abort(), timeoutMs);
-  if (typeof timer.unref === "function") timer.unref();
   return Promise.resolve()
     .then(() =>
       fetchImpl("/api/v1/route/", {

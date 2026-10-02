@@ -107,15 +107,6 @@ An identical trip is remembered for an hour (`TRIP_CACHE_SECONDS`). A price chan
 - The routing server is the public OSRM demo at `https://router.project-osrm.org`. It is meant for light use and sometimes answers with an error. Point `OSRM_BASE_URL` at your own server for anything heavier.
 - A start or finish more than 5 miles from a road is refused (`MAX_SNAP_MILES`). The trip would not be the one that was asked for.
 
-## Loom (about 5 minutes)
-
-1. Open the map and click a short trip, Austin toward Dallas. The tank covers it, so the cost is $0.00 and there are no stops.
-2. Click a long trip, Austin toward Los Angeles. Name the stops and the total. The first 50 gallons were already in the tank.
-3. Say that the road comes from one request to the routing service, and the stations were already in the database. A repeat of the same trip does not call it again.
-4. Say how a stop is chosen: buy only enough to reach a cheaper station when one is in range, otherwise fill up. If 10 miles off the road is not enough, try 25, then 50.
-5. Click a point well offshore. The API refuses it, because the road it would use is not the place you clicked.
-6. Mention the public routing server is for this demo, and `OSRM_BASE_URL` is how you replace it.
-
 ## Development setup
 
 Requires Python 3.12+ (developed on 3.14).

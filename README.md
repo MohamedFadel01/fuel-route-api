@@ -2,7 +2,7 @@
 
 Send a start and a finish in the United States or Canada. The API returns the driving route and the fuel stops that cost the least, and the money those stops come to.
 
-The truck starts with a full tank. It can go 500 miles and does 10 mpg, so that first tank is 50 gallons and it is not charged. After that it buys fuel at stations from the price file, along the road.
+The truck starts with a full tank. It can go 500 miles and does 10 mpg, so that first tank is 50 gallons and it is not charged. After that it buys fuel at stations from the price file, along the road. [How a trip is planned](docs/how-a-trip-is-planned.md) walks through one real drive, Austin to Denver, and shows each calculation.
 
 ## Run it
 

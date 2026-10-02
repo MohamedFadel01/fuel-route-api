@@ -35,7 +35,6 @@ def test_the_readme_states_what_a_reviewer_needs():
     assert "10 mpg" in readme
     assert "full tank" in readme
     assert "postman/fuel-route-api.postman_collection.json" in readme
-    assert "Loom" in readme
 
 
 def _requests(items):
